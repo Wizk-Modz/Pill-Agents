@@ -1,0 +1,35 @@
+{
+  "name": "pillagents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pill": "dist/src/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/src/main.js",
+    "dev": "npm run build && npm start",
+    "test": "npm run build && node --test \"dist/test/*.test.js\""
+  },
+  "dependencies": {
+    "ink": "8.0.0",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  },
+  "description": "",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wizk-Modz/Pill-Agents.git"
+  },
+  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/Wizk-Modz/Pill-Agents/issues"
+  },
+  "homepage": "https://github.com/Wizk-Modz/Pill-Agents#readme"
+}
