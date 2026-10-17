@@ -101,3 +101,39 @@ test('renderMarkdown: wrap dòng dài theo độ rộng', () => {
     assert.ok(text.length <= 30, `dòng quá dài: ${text.length}`);
   }
 });
+
+test('renderMarkdown: bảng markdown thành khung box-drawing', () => {
+  const lines = renderMarkdown('| Tên | Tuổi |\n|---|---|\n| An | 30 |\n| Bình | 25 |', 60);
+  const plain = lines.map((segments) => segments.map((segment) => segment.text).join(''));
+  assert.ok(plain[0]!.startsWith('┌'), `thiếu viền trên: ${plain[0]}`);
+  assert.ok(plain[0]!.includes('┬'), 'thiếu nút giao trên');
+  assert.ok(plain.some((line) => line.includes('Tên') && line.includes('│')));
+  assert.ok(plain.some((line) => line.includes('An') && line.includes('30')));
+  assert.ok(plain.some((line) => line.includes('Bình') && line.includes('25')));
+  assert.ok(plain.at(-1)!.startsWith('└'), 'thiếu viền dưới');
+});
+
+test('renderMarkdown: bảng căn lề theo dòng phân cách', () => {
+  const lines = renderMarkdown('| Trái | Phải |\n|:---|--:|\n| a | b |', 60);
+  const plain = lines.map((segments) => segments.map((s) => s.text).join(''));
+  const body = plain.find((line) => line.includes('a') && line.includes('b'))!;
+  // Cột phải căn phải: ký tự b nằm sát lề phải của ô
+  assert.ok(/b \│$/.test(body), `căn phải sai: ${body}`);
+});
+
+test('renderMarkdown: bảng thu hẹp khi hẹp màn hình', () => {
+  const wide = '| Cột một rất dài | Cột hai cũng rất dài |\n|---|---|\n| giá trị dài | giá trị dài khác |';
+  for (const width of [40, 30, 20]) {
+    const lines = renderMarkdown(wide, width);
+    for (const line of lines) {
+      const text = line.map((segment) => segment.text).join('');
+      assert.ok(text.length <= width + 2, `width=${width} vượt: ${text.length}`);
+    }
+  }
+});
+
+test('renderMarkdown: không nhầm dòng có | thường thành bảng', () => {
+  const lines = renderMarkdown('a | b không phải bảng', 60);
+  const plain = lines.map((segments) => segments.map((s) => s.text).join(''));
+  assert.ok(!plain.some((line) => line.startsWith('┌')), 'nhận nhầm thành bảng');
+});

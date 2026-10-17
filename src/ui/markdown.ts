@@ -64,6 +64,139 @@ function inlineSegments(text: string): Segment[] {
   return segments.filter((segment) => segment.text.length > 0);
 }
 
+// Đo độ rộng hiển thị của chuỗi theo số code point.
+function displayWidth(text: string): number {
+  // ponytail: đếm theo code point; ký tự CJK rộng gấp đôi sẽ lệch, dùng string-width nếu cần
+  return [...text].length;
+}
+
+// Đo độ rộng hiển thị của một danh sách segment.
+function segmentsWidth(segments: Segment[]): number {
+  return segments.reduce((total, segment) => total + displayWidth(segment.text), 0);
+}
+
+// Cắt segment cho vừa độ rộng, thêm dấu … nếu bị cắt.
+function clipSegments(segments: Segment[], max: number): Segment[] {
+  const output: Segment[] = [];
+  let used = 0;
+  for (const segment of segments) {
+    const chars = [...segment.text];
+    if (used + chars.length <= max) {
+      output.push(segment);
+      used += chars.length;
+      continue;
+    }
+    const room = max - used - 1;
+    if (room > 0) output.push({ ...segment, text: chars.slice(0, room).join('') });
+    output.push({ text: '…' });
+    return output;
+  }
+  return output;
+}
+
+// Căn lề của một cột trong bảng.
+type Align = 'left' | 'center' | 'right';
+
+// Tách một dòng bảng thành các ô, bỏ dấu | ở hai đầu.
+function splitRow(line: string): string[] {
+  let text = line.trim();
+  if (text.startsWith('|')) text = text.slice(1);
+  if (text.endsWith('|')) text = text.slice(0, -1);
+  return text.split('|').map((cell) => cell.trim());
+}
+
+// Kiểm tra dòng phân cách giữa header và thân bảng.
+function isSeparatorRow(line: string): boolean {
+  const cells = splitRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell));
+}
+
+// Đọc căn lề từng cột từ dòng phân cách.
+function parseAligns(line: string): Align[] {
+  return splitRow(line).map((cell) => {
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+    if (left && right) return 'center';
+    if (right) return 'right';
+    return 'left';
+  });
+}
+
+// Thêm khoảng trắng đệm để ô đủ độ rộng theo căn lề.
+function padCell(segments: Segment[], width: number, align: Align): Segment[] {
+  const space = Math.max(0, width - segmentsWidth(segments));
+  if (align === 'right') return [{ text: ' '.repeat(space) }, ...segments];
+  if (align === 'center') {
+    const left = Math.floor(space / 2);
+    return [{ text: ' '.repeat(left) }, ...segments, { text: ' '.repeat(space - left) }];
+  }
+  return [...segments, { text: ' '.repeat(space) }];
+}
+
+const TABLE_MIN_COL = 6;
+
+// Tính độ rộng từng cột, thu hẹp dần nếu bảng vượt quá độ rộng cho phép.
+function columnWidths(natural: number[], available: number): number[] {
+  const widths = natural.map((value) => Math.max(TABLE_MIN_COL, value));
+  // Mỗi cột tốn thêm 3 ký tự cho "│ " và " ", cộng 1 cho viền phải.
+  const overhead = 3 * widths.length + 1;
+  const budget = Math.max(TABLE_MIN_COL, available - overhead);
+  let total = widths.reduce((sum, value) => sum + value, 0);
+  while (total > budget) {
+    let widest = 0;
+    for (let index = 1; index < widths.length; index++) {
+      if (widths[index]! > widths[widest]!) widest = index;
+    }
+    if (widths[widest]! <= TABLE_MIN_COL) break;
+    widths[widest]! -= 1;
+    total -= 1;
+  }
+  return widths;
+}
+
+// Render bảng markdown thành khung box-drawing.
+function renderTable(header: string[], aligns: Align[], rows: string[][], width: number): Segment[][] {
+  const columns = header.length;
+  if (!columns) return [];
+
+  const headerCells = header.map(inlineSegments);
+  const bodyCells = rows.map((row) =>
+    Array.from({ length: columns }, (_, index) => inlineSegments(row[index] ?? '')),
+  );
+
+  const natural = Array.from({ length: columns }, (_, index) =>
+    Math.max(
+      segmentsWidth(headerCells[index]!),
+      ...bodyCells.map((row) => segmentsWidth(row[index]!)),
+    ),
+  );
+  const widths = columnWidths(natural, width);
+
+  // Tạo đường kẻ ngang với các nút giao tương ứng.
+  const rule = (left: string, middle: string, right: string): Segment[] => [
+    { text: left + widths.map((value) => '─'.repeat(value + 2)).join(middle) + right, color: 'gray' },
+  ];
+
+  // Ghép một hàng thành các segment có viền dọc.
+  const buildRow = (cells: Segment[][]): Segment[] => {
+    const output: Segment[] = [{ text: '│', color: 'gray' }];
+    for (let index = 0; index < columns; index++) {
+      output.push({ text: ' ' });
+      output.push(...padCell(clipSegments(cells[index]!, widths[index]!), widths[index]!, aligns[index] ?? 'left'));
+      output.push({ text: ' ' });
+      output.push({ text: '│', color: 'gray' });
+    }
+    return output;
+  };
+
+  const output: Segment[][] = [rule('┌', '┬', '┐')];
+  output.push(buildRow(headerCells.map((cell) => cell.map((segment) => ({ ...segment, bold: true })))));
+  output.push(rule('├', '┼', '┤'));
+  for (const row of bodyCells) output.push(buildRow(row));
+  output.push(rule('└', '┴', '┘'));
+  return output;
+}
+
 // Tách segment thành token giữ khoảng trắng để wrap theo từ.
 function tokenize(segments: Segment[]): Segment[] {
   const tokens: Segment[] = [];
@@ -138,8 +271,11 @@ export function renderMarkdown(text: string, width: number): Segment[][] {
     codeLines = [];
   };
 
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/\t/g, '  ');
+  const raw = text.split('\n');
+
+  for (let index = 0; index < raw.length; index++) {
+    const line = (raw[index] ?? '').replace(/\t/g, '  ');
+
     if (/^```/.test(line.trim())) {
       if (inCode) {
         flushCode();
@@ -153,6 +289,25 @@ export function renderMarkdown(text: string, width: number): Segment[][] {
       codeLines.push(line);
       continue;
     }
+
+    // Bảng: dòng tiêu đề chứa |, dòng kế tiếp là dòng phân cách.
+    const next = raw[index + 1];
+    if (line.includes('|') && next && isSeparatorRow(next)) {
+      const header = splitRow(line);
+      const aligns = parseAligns(next);
+      const rows: string[][] = [];
+      let cursor = index + 2;
+      while (cursor < raw.length) {
+        const rowLine = raw[cursor] ?? '';
+        if (!rowLine.includes('|') || !rowLine.trim()) break;
+        rows.push(splitRow(rowLine));
+        cursor++;
+      }
+      output.push(...renderTable(header, aligns, rows, width));
+      index = cursor - 1;
+      continue;
+    }
+
     if (!line.trim()) {
       output.push([{ text: '' }]);
       continue;
