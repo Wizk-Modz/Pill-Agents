@@ -1,6 +1,6 @@
 # PillAgents
 
-Coding agent chạy trong terminal, hoạt động với mọi endpoint tương thích OpenAI.
+Coding agent chạy trong terminal, hoạt động với mọi endpoint tương thích OpenAI (OpenAI, DeepSeek, Groq, OpenRouter, proxy nội bộ…), dùng SDK chính thức `openai`.
 
 ## Cài đặt
 
@@ -83,3 +83,11 @@ npm test
 ```
 
 `test/mock-server.mjs` là mock API dùng để kiểm thử TUI không cần key thật.
+
+## Ghi chú kỹ thuật
+
+Gọi model qua SDK `openai` với `baseURL` trỏ tới endpoint cấu hình. SDK tự xử lý retry (2 lần, backoff) và timeout; `AbortSignal` được truyền vào để huỷ lượt.
+
+Trường `reasoning_content` (DeepSeek/OpenRouter) không có trong type chuẩn của SDK nên được đọc qua cast — SDK không loại bỏ field lạ.
+
+Nếu proxy bỏ qua `stream: true` và trả JSON thường, SDK trả stream rỗng; client tự gọi lại không stream để lấy dữ liệu.
