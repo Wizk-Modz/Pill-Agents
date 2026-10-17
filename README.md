@@ -40,6 +40,27 @@ Biến môi trường (đặt trong `env` của `settings.json` hoặc biến m�
 | `PILL_MAX_STEPS` | `25` | Số bước tool tối đa mỗi lượt |
 | `PILL_CONFIG_DIR` | `~/.pill` | Ghi đè thư mục cấu hình |
 
+## PILL.md — hướng dẫn cho agent
+
+Tương tự `CLAUDE.md`, agent tự động nạp file `PILL.md` và chèn vào system prompt:
+
+| Vị trí | Phạm vi |
+|---|---|
+| `~/.pill/PILL.md` | Mọi dự án (hướng dẫn chung của bạn) |
+| `PILL.md` ở thư mục dự án và các thư mục cha | Riêng dự án đó |
+
+File ở thư mục gần thư mục làm việc nhất được nạp sau cùng. File rỗng bị bỏ qua. Nội dung được chèn kèm chỉ thị ưu tiên cao hơn hành vi mặc định.
+
+Ví dụ `PILL.md` của dự án:
+
+```markdown
+# Quy tắc dự án
+
+- Dùng pnpm, không dùng npm.
+- Chạy `pnpm test` trước khi báo hoàn thành.
+- Trả lời bằng tiếng Việt.
+```
+
 ## Phím tắt
 
 | Phím | Tác dụng |

@@ -1,7 +1,7 @@
 // Vòng lặp agent: gọi model, xử lý tool call và lưu phiên.
 import { mkdir, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import path from 'node:path';
+import { loadInstructions, renderInstructions } from './instructions.js';
 import { streamChat } from './llm.js';
 import type { Config } from './config.js';
 import type { ChatMessage, ToolCall, ToolResult, ToolSpec } from './types.js';
@@ -50,6 +50,13 @@ function buildSystemPrompt(cwd: string): string {
   ].join('\n');
 }
 
+// Ghép system prompt với nội dung các file PILL.md đã nạp.
+function composeSystemPrompt(cwd: string, configDir: string): string {
+  const base = buildSystemPrompt(cwd);
+  const instructions = renderInstructions(loadInstructions(cwd, configDir));
+  return instructions ? `${base}\n\n${instructions}` : base;
+}
+
 // Quản lý hội thoại và thực thi tool cho một phiên làm việc.
 export class Agent {
   readonly sessionFile: string;
@@ -62,10 +69,9 @@ export class Agent {
     this.config = config;
     this.tools = tools;
     this.toolMap = new Map(tools.map((tool) => [tool.name, tool]));
-    this.messages = [{ role: 'system', content: buildSystemPrompt(config.cwd) }];
+    this.messages = [{ role: 'system', content: composeSystemPrompt(config.cwd, config.configDir) }];
     this.sessionFile = path.join(
-      homedir(),
-      '.pill',
+      config.configDir,
       'sessions',
       `${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
     );
@@ -73,12 +79,12 @@ export class Agent {
 
   // Trả về system prompt hiện tại để giao diện hiển thị.
   systemPrompt(): string {
-    return buildSystemPrompt(this.config.cwd);
+    return composeSystemPrompt(this.config.cwd, this.config.configDir);
   }
 
   // Xoá hội thoại hiện tại và bắt đầu phiên mới.
   reset(): void {
-    this.messages = [{ role: 'system', content: buildSystemPrompt(this.config.cwd) }];
+    this.messages = [{ role: 'system', content: composeSystemPrompt(this.config.cwd, this.config.configDir) }];
   }
 
   // Chạy một lượt người dùng đến khi model trả lời xong hoặc hết số bước.
