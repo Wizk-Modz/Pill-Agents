@@ -7,8 +7,20 @@ Coding agent chạy trong terminal, hoạt động với mọi endpoint tương 
 ```bash
 npm install
 npm run build
-cp .env.example .env   # điền PILL_API_KEY
 ```
+
+Cấu hình theo một trong hai cách:
+
+**1. `settings.json` trong thư mục cấu hình** (khuyến nghị):
+
+```bash
+mkdir -p ~/.pill
+cp settings.example.json ~/.pill/settings.json   # rồi điền key
+```
+
+Thư mục cấu hình tự xác định theo hệ điều hành: `~/.pill` trên Linux/macOS/Termux, `%USERPROFILE%\.pill` trên Windows. Ghi đè bằng biến `PILL_CONFIG_DIR`.
+
+**2. File `.env`** ở thư mục dự án (dùng `--env-file-if-exists` khi chạy `npm start`).
 
 ## Chạy
 
@@ -18,7 +30,7 @@ npm start
 npm link && pill
 ```
 
-Biến môi trường:
+Biến môi trường (đặt trong `env` của `settings.json` hoặc biến môi trường thật; biến môi trường được ưu tiên):
 
 | Biến | Mặc định | Mô tả |
 |---|---|---|
@@ -26,6 +38,7 @@ Biến môi trường:
 | `PILL_BASE_URL` | `https://api.openai.com/v1` | Endpoint proxy |
 | `PILL_MODEL` | `gpt-4o-mini` | Model |
 | `PILL_MAX_STEPS` | `25` | Số bước tool tối đa mỗi lượt |
+| `PILL_CONFIG_DIR` | `~/.pill` | Ghi đè thư mục cấu hình |
 
 ## Phím tắt
 
@@ -40,6 +53,7 @@ Biến môi trường:
 | `Ctrl+P` / `Ctrl+N` | Lịch sử lệnh |
 | `Ctrl+A` / `Ctrl+E` | Về đầu / cuối dòng |
 | `Ctrl+U` / `Ctrl+K` | Xoá từ đầu / đến cuối dòng |
+| `Ctrl+O` | Mở/đóng khối thinking đã thu gọn |
 | `Esc` | Huỷ lượt đang chạy |
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |

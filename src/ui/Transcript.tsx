@@ -5,7 +5,7 @@ import { paintSegments, renderMarkdown, renderStyledText, type Segment } from '.
 export type ItemBody =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }
-  | { kind: 'thinking'; text: string }
+  | { kind: 'thinking'; text: string; expanded?: boolean; seconds?: number }
   | { kind: 'info'; text: string }
   | { kind: 'error'; text: string }
   | { kind: 'tool'; call: ToolCall; result?: ToolResult; summary?: string };
@@ -96,10 +96,15 @@ export function itemToLines(item: TranscriptItem, width: number): string[] {
       return ['', ...prefixLines(lines, [{ text: '  ' }], [{ text: '  ' }]).map(paintSegments)];
     }
     case 'thinking': {
+      // Sau khi xong, khối thinking thu gọn thành một dòng; ấn Ctrl+O để mở lại.
+      const label = item.seconds ? `Thought for ${item.seconds}s` : 'Thinking';
+      if (item.expanded === false) {
+        return [paintSegments([{ text: `  ✻ ${label} (ctrl+o để xem)`, color: 'gray', dim: true, italic: true }])];
+      }
       const tail = item.text.split('\n').slice(-THINKING_MAX_LINES);
       const lines = renderStyledText(tail.join('\n'), width - 4, { dim: true, italic: true, color: 'gray' });
       return [
-        paintSegments([{ text: '  ✻ Thinking', color: 'gray', dim: true, italic: true }]),
+        paintSegments([{ text: `  ✻ ${label}`, color: 'gray', dim: true, italic: true }]),
         ...lines.map((line) => paintSegments([{ text: '    ' }, ...line])),
       ];
     }

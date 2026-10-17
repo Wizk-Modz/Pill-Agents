@@ -31,20 +31,20 @@ function useTerminalSize(): { columns: number; rows: number } {
   return size;
 }
 
-// Mô tả ngắn gọn tool đang chờ xác nhận.
+// Mô tả ngắn gọn tool đang chờ xác nhận, gộp về một dòng để không vỡ layout.
 function approvalDetail(call: ToolCall): string {
+  let detail = call.arguments;
   try {
     const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
-    if (call.name === 'bash') return String(args.command ?? '');
-    if (call.name === 'write_file') {
+    if (call.name === 'bash') detail = String(args.command ?? '');
+    else if (call.name === 'write_file') {
       const size = typeof args.content === 'string' ? args.content.length : 0;
-      return `${String(args.path ?? '')} (${size} ký tự)`;
-    }
-    if (call.name === 'edit_file') return String(args.path ?? '');
+      detail = `${String(args.path ?? '')} (${size} ký tự)`;
+    } else if (call.name === 'edit_file') detail = String(args.path ?? '');
   } catch {
     // Hiển thị thô nếu JSON hỏng.
   }
-  return call.arguments.slice(0, 300);
+  return detail.replace(/\s+/g, ' ').trim();
 }
 
 // Màn hình chính của PillAgents.
@@ -64,6 +64,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const idRef = useRef(0);
   const textRef = useRef('');
   const thinkingRef = useRef('');
+  const thinkingStartRef = useRef<number | null>(null);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const pendingRef = useRef<PendingApproval | null>(null);
@@ -127,12 +128,16 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     setThinkingLive(thinkingRef.current);
   }, []);
 
-  // Chuyển thinking đang stream thành mục cố định.
+  // Chuyển thinking đang stream thành mục cố định, thu gọn lại sau khi xong.
   const commitThinking = useCallback(() => {
     const text = thinkingRef.current.trim();
     thinkingRef.current = '';
     setThinkingLive('');
-    if (text) pushItem({ kind: 'thinking', text });
+    const startedAt = thinkingStartRef.current;
+    thinkingStartRef.current = null;
+    if (!text) return;
+    const seconds = startedAt ? Math.max(1, Math.round((Date.now() - startedAt) / 1000)) : undefined;
+    pushItem({ kind: 'thinking', text, expanded: false, seconds });
   }, [pushItem]);
 
   // Chuyển text đang stream thành mục cố định.
@@ -183,6 +188,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
           scheduleFlush();
         },
         onThinking: (chunk: string) => {
+          if (!thinkingRef.current) thinkingStartRef.current = Date.now();
           thinkingRef.current += chunk;
           scheduleFlush();
         },
@@ -269,10 +275,14 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         }
         return true;
       }
+      if (command === '/system') {
+        pushItem({ kind: 'info', text: 'System prompt hiện tại:\n' + agent.systemPrompt() });
+        return true;
+      }
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+D thoát • /clear /model /exit',
+          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /system /exit',
         });
         return true;
       }
@@ -341,6 +351,19 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     [maxTop],
   );
 
+  // Mở/đóng toàn bộ khối thinking, xoá cache để render lại.
+  const toggleThinking = useCallback(() => {
+    setItems((current) => {
+      const thinking = current.filter((item) => item.kind === 'thinking');
+      if (!thinking.length) return current;
+      const expand = thinking.some((item) => item.kind === 'thinking' && item.expanded === false);
+      for (const item of thinking) lineCacheRef.current.delete(String(item.id));
+      return current.map((item) =>
+        item.kind === 'thinking' ? { ...item, expanded: expand } : item,
+      );
+    });
+  }, []);
+
   // Xử lý sự kiện phím đã chuẩn hoá.
   const handleKey = useCallback(
     (event: KeyEvent) => {
@@ -370,6 +393,11 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       }
 
       const { key, char } = event;
+
+      if (key.ctrl && char === 'o') {
+        toggleThinking();
+        return;
+      }
 
       if (key.ctrl && char === 'c') {
         if (busyRef.current) {
@@ -407,7 +435,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         applyInput(result.state);
       }
     },
-    [abort, applyInput, exit, history, scrollBy, submit, viewportHeight],
+    [abort, applyInput, exit, history, scrollBy, submit, toggleThinking, viewportHeight],
   );
 
   useKeys(handleKey);
@@ -429,7 +457,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
               ⏵ Cho phép chạy{' '}
             </Text>
             <Text bold>{pendingApproval.call.name}</Text>
-            <Text dimColor> — {approvalDetail(pendingApproval.call).slice(0, 300)}</Text>
+            <Text dimColor> — {approvalDetail(pendingApproval.call).slice(0, columns - 30)}</Text>
           </Text>
           <Text dimColor>
             <Text color="green">[y]</Text> đồng ý · <Text color="red">[n/Esc]</Text> từ chối

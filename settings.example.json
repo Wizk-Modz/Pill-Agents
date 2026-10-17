@@ -1,0 +1,8 @@
+{
+  "env": {
+    "PILL_API_KEY": "sk-your-key",
+    "PILL_BASE_URL": "https://api.openai.com/v1",
+    "PILL_MODEL": "gpt-4o-mini",
+    "PILL_MAX_STEPS": "25"
+  }
+}
