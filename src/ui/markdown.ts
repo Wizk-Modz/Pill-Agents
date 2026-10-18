@@ -6,6 +6,7 @@ export type Segment = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  strike?: boolean;
 };
 
 const CODES: Record<string, number> = {
@@ -28,6 +29,7 @@ export function paint(segment: Segment): string {
   if (segment.dim) codes.push(2);
   if (segment.italic) codes.push(3);
   if (segment.underline) codes.push(4);
+  if (segment.strike) codes.push(9);
   const color = segment.color ? CODES[segment.color] : undefined;
   if (color) codes.push(color);
   if (!codes.length) return segment.text;
@@ -39,17 +41,26 @@ export function paintSegments(segments: Segment[]): string {
   return segments.map(paint).join('');
 }
 
-// Phân tích cú pháp inline: bold, italic, code, link.
+// Phân tích cú pháp inline: code, link, đậm, đậm nghiêng, nghiêng, gạch ngang.
 function inlineSegments(text: string): Segment[] {
   const segments: Segment[] = [];
-  const pattern = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+  // Mẫu dài phải đứng trước mẫu ngắn (*** trước **, ___ trước __) để không cắt sai cặp dấu.
+  // (?!\s) và [^\s*] giữ đúng luật markdown: dấu nhấn không mở/đóng khi sát khoảng trắng, nhờ đó
+  // "2 * 3 * 4" giữ nguyên dấu sao thay vì bị in nghiêng. Gạch dưới còn phải đứng ngoài từ, để
+  // snake_case_name hay PILL_MAX_STEPS không bị cắt thành in nghiêng.
+  const pattern =
+    /(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*\*(?!\s)[^*]*[^\s*]\*\*\*|(?<![\p{L}\p{N}])___(?!\s)[^_]*[^\s_]___(?![\p{L}\p{N}])|\*\*(?!\s)[^*]*[^\s*]\*\*|(?<![\p{L}\p{N}])__(?!\s)[^_]*[^\s_]__(?![\p{L}\p{N}])|~~(?!\s)[^~]*[^\s~]~~|\*(?!\s)[^*\n]*[^\s*]\*|(?<![\p{L}\p{N}])_(?!\s)[^_\n]*[^\s_]_(?![\p{L}\p{N}]))/gu;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     const index = match.index ?? 0;
     if (index > last) segments.push({ text: text.slice(last, index) });
     const token = match[0];
-    if (token.startsWith('**') || token.startsWith('__')) {
+    if (token.startsWith('***') || token.startsWith('___')) {
+      segments.push({ text: token.slice(3, -3), bold: true, italic: true });
+    } else if (token.startsWith('**') || token.startsWith('__')) {
       segments.push({ text: token.slice(2, -2), bold: true });
+    } else if (token.startsWith('~~')) {
+      segments.push({ text: token.slice(2, -2), strike: true });
     } else if (token.startsWith('`')) {
       segments.push({ text: token.slice(1, -1), color: 'yellow' });
     } else if (token.startsWith('[')) {
@@ -257,16 +268,40 @@ export function renderStyledText(text: string, width: number, style: Omit<Segmen
   return output;
 }
 
+// Style tiêu đề theo cấp: H1 nổi nhất rồi nhạt dần tới H6.
+const HEADING_STYLES: Array<Omit<Segment, 'text'>> = [
+  { bold: true, underline: true, color: 'cyan' },
+  { bold: true, color: 'cyan' },
+  { bold: true, color: 'blue' },
+  { bold: true, color: 'white' },
+  { bold: true, color: 'gray' },
+  { dim: true, color: 'gray' },
+];
+
+// Cắt một chuỗi thành các đoạn dài đúng limit code point, giữ nguyên mọi ký tự.
+function chunkText(text: string, limit: number): string[] {
+  const chars = [...text];
+  const chunks: string[] = [];
+  for (let index = 0; index < chars.length; index += limit) {
+    chunks.push(chars.slice(index, index + limit).join(''));
+  }
+  return chunks.length ? chunks : [''];
+}
+
 // Render markdown (heading, list, quote, code fence, inline) thành các dòng segment.
 export function renderMarkdown(text: string, width: number): Segment[][] {
   const output: Segment[][] = [];
   let inCode = false;
   let codeLines: string[] = [];
 
-  // Đẩy các dòng code đã gom vào output.
+  // Đẩy các dòng code đã gom vào output, cắt dòng dài cho vừa khung.
   const flushCode = (): void => {
+    const limit = Math.max(10, width - 2);
     for (const line of codeLines) {
-      output.push([{ text: '│ ', color: 'gray', dim: true }, { text: line, color: 'green' }]);
+      // Nội dung code để nguyên màu chữ mặc định: giữ đúng thụt lề và hợp mọi theme terminal.
+      for (const chunk of chunkText(line, limit)) {
+        output.push([{ text: '│ ', color: 'gray', dim: true }, { text: chunk }]);
+      }
     }
     codeLines = [];
   };
@@ -315,7 +350,8 @@ export function renderMarkdown(text: string, width: number): Segment[][] {
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
-      output.push(...wrapSegments([{ text: heading[2] ?? '', bold: true, color: 'cyan' }], width));
+      const style = HEADING_STYLES[(heading[1] ?? '#').length - 1]!;
+      output.push(...wrapSegments([{ ...style, text: heading[2] ?? '' }], width));
       continue;
     }
 
@@ -324,10 +360,19 @@ export function renderMarkdown(text: string, width: number): Segment[][] {
       continue;
     }
 
-    const quote = /^\s*>\s?(.*)$/.exec(line);
+    // Quote lồng nhau: mỗi cấp thêm một vạch, từ cấp hai trở đi làm mờ cho đỡ rối.
+    const quote = /^\s*((?:>\s*)+)(.*)$/.exec(line);
     if (quote) {
-      for (const wrapped of wrapSegments(inlineSegments(quote[1] ?? ''), width - 2)) {
-        output.push([{ text: '│ ', color: 'gray' }, ...wrapped]);
+      const depth = ((quote[1] ?? '').match(/>/g) ?? []).length;
+      const bar: Segment = { text: '│ '.repeat(depth), color: 'gray' };
+      if (depth > 1) bar.dim = true;
+      const content = quote[2] ?? '';
+      if (!content.trim()) {
+        output.push([{ ...bar, text: bar.text.trimEnd() }]);
+        continue;
+      }
+      for (const wrapped of wrapSegments(inlineSegments(content), width - depth * 2)) {
+        output.push([bar, ...wrapped]);
       }
       continue;
     }

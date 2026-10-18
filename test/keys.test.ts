@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseInput } from '../src/ui/useKeys.js';
-import { renderMarkdown } from '../src/ui/markdown.js';
+import { renderMarkdown, paint } from '../src/ui/markdown.js';
 import { reduceInput, EMPTY_KEY } from '../src/ui/InputBox.js';
 
 // Lấy sự kiện phím đầu tiên sau khi parse.
@@ -167,4 +167,105 @@ test('renderMarkdown: không nhầm dòng có | thường thành bảng', () => 
   const lines = renderMarkdown('a | b không phải bảng', 60);
   const plain = lines.map((segments) => segments.map((s) => s.text).join(''));
   assert.ok(!plain.some((line) => line.startsWith('┌')), 'nhận nhầm thành bảng');
+});
+
+test('spinner dùng toàn khung hình braille và có U+283C', async () => {
+  const { SPINNER_FRAMES } = await import('../src/ui/App.js');
+  assert.ok(SPINNER_FRAMES.includes('\u283c'), 'thiếu U+283C');
+  const codes = SPINNER_FRAMES.map((frame) => frame.codePointAt(0) ?? 0);
+  assert.ok(
+    codes.every((code) => code >= 0x2800 && code <= 0x28ff),
+    'có khung hình nằm ngoài dải braille',
+  );
+});
+
+test('renderMarkdown: đậm nghiêng *** và gạch ngang ~~', () => {
+  const segments = renderMarkdown('***đậm nghiêng*** và ~~gạch ngang~~', 80).flat();
+  const styled = (keep: (segment: { bold?: boolean; italic?: boolean; strike?: boolean }) => boolean) =>
+    segments.filter(keep).map((segment) => segment.text).join('');
+  assert.equal(styled((segment) => Boolean(segment.bold && segment.italic)), 'đậm nghiêng');
+  assert.equal(styled((segment) => Boolean(segment.strike)), 'gạch ngang');
+  assert.ok(!segments.some((segment) => /[*~]/.test(segment.text)), 'còn sót dấu markdown');
+  assert.equal(paint({ text: 'x', strike: true }), '\x1b[9mx\x1b[0m');
+});
+
+test('renderMarkdown: dấu nhấn sát khoảng trắng và gạch dưới trong từ được giữ nguyên', () => {
+  const plain = (text: string) => renderMarkdown(text, 80).flat().map((segment) => segment.text).join('');
+  assert.equal(plain('2 * 3 * 4'), '2 * 3 * 4');
+  assert.equal(plain('snake_case_name và PILL_MAX_STEPS'), 'snake_case_name và PILL_MAX_STEPS');
+  assert.ok(renderMarkdown('**đậm **', 80).flat().every((segment) => !segment.bold), 'vẫn nhận là đậm');
+});
+
+test('renderMarkdown: dòng trộn code, đậm, nghiêng, đậm nghiêng, gạch ngang', () => {
+  const segments = renderMarkdown(
+    'Fix `docs/` và **Đậm**, *nghiêng*, ***đậm nghiêng***, ~~gạch ngang~~',
+    100,
+  ).flat();
+  const styled = (keep: (segment: { bold?: boolean; italic?: boolean; strike?: boolean; color?: string }) => boolean) =>
+    segments.filter(keep).map((segment) => segment.text).join('');
+  assert.equal(styled((segment) => segment.color === 'yellow'), 'docs/');
+  assert.equal(styled((segment) => Boolean(segment.bold && !segment.italic)), 'Đậm');
+  assert.equal(styled((segment) => Boolean(segment.italic && !segment.bold)), 'nghiêng');
+  assert.equal(styled((segment) => Boolean(segment.bold && segment.italic)), 'đậm nghiêng');
+  assert.equal(styled((segment) => Boolean(segment.strike)), 'gạch ngang');
+});
+
+test('renderMarkdown: khối code không tô màu, giữ thụt lề và cắt dòng dài', () => {
+  const long = `console.log("${'x'.repeat(80)}");`;
+  const lines = renderMarkdown(['```ts', '  const a = 1;', '', long, '```'].join('\n'), 40);
+  const plain = lines.map((segments) => segments.map((segment) => segment.text).join(''));
+  const content = lines.map((segments) => segments[1]!.text);
+  assert.equal(content[0], '  const a = 1;', 'phải giữ thụt lề');
+  assert.equal(content[1], '', 'phải giữ dòng trống trong khối code');
+  assert.ok(content.length > 3, 'dòng dài phải bị cắt thành nhiều dòng');
+  assert.equal(content.slice(2).join(''), long, 'cắt dòng mà không được mất ký tự');
+  for (let index = 0; index < lines.length; index++) {
+    assert.equal(lines[index]![0]!.text, '│ ', 'mỗi dòng code mở đầu bằng vạch');
+    assert.equal(lines[index]![0]!.color, 'gray');
+    assert.equal(content[index]!.includes('\x1b'), false);
+    assert.equal(lines[index]![1]!.color, undefined, 'nội dung code để màu mặc định');
+    assert.ok([...plain[index]!].length <= 40, `dòng code vượt khung: ${plain[index]}`);
+  }
+});
+
+test('renderMarkdown: tiêu đề H1 tới H6 mỗi cấp một style', () => {
+  const styleKey = (segment: { color?: string; dim?: boolean; bold?: boolean; underline?: boolean }): string =>
+    `${segment.bold ? 'b' : ''}${segment.dim ? 'd' : ''}${segment.underline ? 'u' : ''}${segment.color ?? ''}`;
+  const signatures = [1, 2, 3, 4, 5, 6].map((level) => {
+    const line = renderMarkdown(`${'#'.repeat(level)} Cấp ${level}`, 40)[0]!;
+    assert.equal(line.map((segment) => segment.text).join(''), `Cấp ${level}`, 'bỏ dấu # nhưng giữ chữ');
+    const keys = new Set(line.map(styleKey));
+    assert.equal(keys.size, 1, `cấp ${level} phải dùng một style`);
+    return [...keys][0];
+  });
+  assert.equal(new Set(signatures).size, 6, 'sáu cấp phải khác nhau');
+  assert.equal(signatures[0], 'bucyan');
+  assert.equal(signatures[1], 'bcyan');
+  assert.equal(signatures[2], 'bblue');
+  assert.equal(signatures[3], 'bwhite');
+  assert.equal(signatures[4], 'bgray');
+  assert.equal(signatures[5], 'dgray');
+});
+
+test('renderMarkdown: quote lồng nhau thêm vạch theo từng cấp', () => {
+  const lines = renderMarkdown(
+    ['> cấp một', '> > cấp hai', '>>cấp hai dính', '> > > cấp ba', '>', '> chữ **đậm**'].join('\n'),
+    40,
+  );
+  const plain = lines.map((segments) => segments.map((segment) => segment.text).join(''));
+  assert.equal(plain[0], '│ cấp một');
+  assert.equal(plain[1], '│ │ cấp hai');
+  assert.equal(plain[2], '│ │ cấp hai dính', 'dạng >> không có dấu cách vẫn tính là hai cấp');
+  assert.equal(plain[3], '│ │ │ cấp ba');
+  assert.equal(plain[4], '│', 'dòng quote trống vẫn hiện vạch');
+  assert.equal(plain[5], '│ chữ đậm');
+  assert.ok(lines[1]![0]!.dim, 'từ cấp hai trở đi vạch bị làm mờ');
+  assert.ok(!lines[0]![0]!.dim, 'vạch cấp một không làm mờ');
+  assert.ok(lines[5]!.some((segment) => segment.bold), 'quote vẫn parse markdown inline');
+
+  for (const line of renderMarkdown(`> > ${'x'.repeat(50)}`, 20)) {
+    const text = line.map((segment) => segment.text).join('');
+    assert.equal(line[0]!.text, '│ │ ');
+    assert.ok([...text].length <= 20, `dòng quote vượt khung: ${text}`);
+  }
 });
