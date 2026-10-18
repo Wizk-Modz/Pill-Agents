@@ -39,12 +39,14 @@ src/
     ├── InputBox.tsx    Ô nhập
     ├── useKeys.ts      Parse phím thô
     ├── markdown.ts     Render markdown → ANSI
-    └── Transcript.tsx  Item → dòng hiển thị
+    ├── Transcript.tsx  Item → dòng hiển thị
+    └── commands.ts     Gợi ý lệnh gạch chéo
 
 test/
-├── tools.test.ts        Tool file và input reducer
+├── tools.test.ts        Tool file, shell theo nền tảng, input reducer
 ├── keys.test.ts         Parse phím và markdown
 ├── instructions.test.ts Nạp PILL.md
+├── agent.test.ts        System prompt
 └── mock-server.mjs      Mock API (không phải test tự động)
 ```
 
@@ -58,15 +60,16 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-31 test, bao gồm:
+40 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
-| Tool | ghi/đọc file, edit từ chối khớp nhiều lần, bash trả lỗi không ném, glob/grep |
-| Input | Enter gửi, `\`+Enter xuống dòng, history, con trỏ nhiều dòng, paste |
+| Tool | ghi/đọc file, edit từ chối khớp nhiều lần, bash trả lỗi không ném, glob/grep, pattern bắt đầu bằng `-`, shell và thư mục tạm theo nền tảng |
+| Input | Enter gửi, `\`+Enter xuống dòng, history, Ctrl+P/Ctrl+N, con trỏ nhiều dòng, paste |
 | Phím | mũi tên khi escape bị tách, chuột SGR, bracketed paste, tiếng Việt |
-| Markdown | heading/bullet/code, bảng box-drawing, căn lề, thu hẹp, wrap |
+| Markdown | heading/bullet/code, bảng box-drawing, căn lề, thu hẹp, wrap, cặp surrogate |
 | PILL.md | global + project, thư mục cha, file rỗng |
+| Agent | system prompt nêu thư mục làm việc và thư mục tạm |
 
 Test không cần API key — không nhóm nào gọi mạng.
 
@@ -81,7 +84,7 @@ test('mô tả ngắn gọn hành vi', async () => {
 });
 ```
 
-Với test cần file, dùng `withTempDir()` có sẵn trong `tools.test.ts` để tạo thư mục tạm và tự dọn.
+Với test cần file, dùng `withTempDir()` có sẵn trong `tools.test.ts` để tạo thư mục tạm và tự dọn. Không hardcode `/tmp`: dùng `tmpdir()` của `node:os` — Termux dùng `$PREFIX/tmp`, Windows dùng `%TEMP%`.
 
 ## Kiểm thử TUI
 

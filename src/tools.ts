@@ -1,6 +1,7 @@
 // Bộ tool cho agent: đọc/ghi/sửa file, chạy lệnh, grep và glob.
 import { execFile } from 'node:child_process';
 import { glob, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ToolResult, ToolSpec } from './types.js';
@@ -60,16 +61,34 @@ async function editFileTool(cwd: string, args: Record<string, unknown>): Promise
   return { content: `Đã sửa ${filePath} (${occurrences} chỗ).` };
 }
 
+// Xác định shell và tham số chạy lệnh theo hệ điều hành.
+export function resolveShell(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  // Windows không có /bin/sh, dùng cmd.exe của hệ thống.
+  if (platform === 'win32') return { command: env.COMSPEC || 'cmd.exe', args: ['/d', '/s', '/c'] };
+  return { command: '/bin/sh', args: ['-c'] };
+}
+
+// Môi trường cho tiến trình con, bổ sung thư mục tạm khi môi trường cha chưa đặt.
+export function childEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const dir = tmpdir();
+  return { ...base, TMPDIR: base.TMPDIR || dir, TMP: base.TMP || dir, TEMP: base.TEMP || dir };
+}
+
 // Chạy lệnh shell trong thư mục làm việc, trả stdout và stderr.
 async function bashTool(cwd: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ToolResult> {
   if (typeof args.command !== 'string' || !args.command.trim()) throw new Error('Thiếu tham số "command".');
   const timeout = Math.min(Math.max(Number(args.timeout) || 120, 1), 600) * 1000;
+  const shell = resolveShell();
   try {
-    const { stdout, stderr } = await execFileAsync('/bin/sh', ['-c', args.command], {
+    const { stdout, stderr } = await execFileAsync(shell.command, [...shell.args, args.command], {
       cwd,
       timeout,
       maxBuffer: 10 * 1024 * 1024,
       signal,
+      env: childEnv(),
     });
     return { content: clip([stdout, stderr].filter(Boolean).join('\n') || '(không có output)') };
   } catch (error) {
@@ -102,7 +121,7 @@ async function grepTool(cwd: string, args: Record<string, unknown>): Promise<Too
   const target = typeof args.path === 'string' && args.path ? args.path : '.';
   const include = typeof args.glob === 'string' && args.glob ? ['-g', args.glob] : [];
   try {
-    const { stdout } = await execFileAsync('rg', ['--line-number', '--no-heading', '--color', 'never', ...include, args.pattern, target], {
+    const { stdout } = await execFileAsync('rg', ['--line-number', '--no-heading', '--color', 'never', ...include, '-e', args.pattern, target], {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
     });

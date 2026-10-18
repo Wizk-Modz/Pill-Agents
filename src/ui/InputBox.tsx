@@ -51,6 +51,40 @@ function insertAt(value: string, cursor: number, text: string): { value: string;
   return { value: value.slice(0, cursor) + text + value.slice(cursor), cursor: cursor + text.length };
 }
 
+// Đưa con trỏ lên dòng trên, hoặc lùi về mục lịch sử trước đó khi đang ở dòng đầu.
+function moveCursorUp(state: InputState, history: string[]): InputState {
+  const { value, cursor } = state;
+  const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
+  if (lineStart > 0) {
+    const column = cursor - lineStart;
+    const previousStart = value.lastIndexOf('\n', lineStart - 2) + 1;
+    const previousLength = lineStart - 1 - previousStart;
+    return { ...state, cursor: previousStart + Math.min(column, previousLength) };
+  }
+  if (!history.length) return state;
+  const index = Math.min(history.length - 1, state.historyIndex + 1);
+  const next = history[history.length - 1 - index] ?? '';
+  return { value: next, cursor: next.length, historyIndex: index };
+}
+
+// Đưa con trỏ xuống dòng dưới, hoặc tiến tới mục lịch sử sau đó khi đang ở dòng cuối.
+function moveCursorDown(state: InputState, history: string[]): InputState {
+  const { value, cursor } = state;
+  const nextBreak = value.indexOf('\n', cursor);
+  if (nextBreak !== -1) {
+    const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
+    const column = cursor - lineStart;
+    const nextStart = nextBreak + 1;
+    const nextEnd = value.indexOf('\n', nextStart);
+    const nextLength = (nextEnd === -1 ? value.length : nextEnd) - nextStart;
+    return { ...state, cursor: nextStart + Math.min(column, nextLength) };
+  }
+  if (state.historyIndex < 0) return state;
+  const index = state.historyIndex - 1;
+  const next = index < 0 ? '' : history[history.length - 1 - index] ?? '';
+  return { value: next, cursor: next.length, historyIndex: index };
+}
+
 // Xử lý phím cho ô nhập, trả về state mới hoặc lệnh gửi.
 export function reduceInput(
   state: InputState,
@@ -87,35 +121,9 @@ export function reduceInput(
     const next = value.slice(0, cursor) + value.slice(cursor + 1);
     return { state: { value: next, cursor, historyIndex: -1 } };
   }
-  // ↑/↓ di chuyển giữa các dòng khi con trỏ ở dòng giữa, ngược lại là lịch sử.
-  if (key.upArrow) {
-    const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
-    if (lineStart > 0) {
-      const column = cursor - lineStart;
-      const previousStart = value.lastIndexOf('\n', lineStart - 2) + 1;
-      const previousLength = lineStart - 1 - previousStart;
-      return { state: { ...state, cursor: previousStart + Math.min(column, previousLength) } };
-    }
-    if (!history.length) return { state };
-    const index = Math.min(history.length - 1, state.historyIndex + 1);
-    const next = history[history.length - 1 - index] ?? '';
-    return { state: { value: next, cursor: next.length, historyIndex: index } };
-  }
-  if (key.downArrow) {
-    const nextBreak = value.indexOf('\n', cursor);
-    if (nextBreak !== -1) {
-      const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
-      const column = cursor - lineStart;
-      const nextStart = nextBreak + 1;
-      const nextEnd = value.indexOf('\n', nextStart);
-      const nextLength = (nextEnd === -1 ? value.length : nextEnd) - nextStart;
-      return { state: { ...state, cursor: nextStart + Math.min(column, nextLength) } };
-    }
-    if (state.historyIndex < 0) return { state };
-    const index = state.historyIndex - 1;
-    const next = index < 0 ? '' : history[history.length - 1 - index] ?? '';
-    return { state: { value: next, cursor: next.length, historyIndex: index } };
-  }
+  // ↑/↓ (và Ctrl+P/Ctrl+N) di chuyển giữa các dòng khi đang soạn nhiều dòng, ngược lại là lịch sử.
+  if (key.upArrow) return { state: moveCursorUp(state, history) };
+  if (key.downArrow) return { state: moveCursorDown(state, history) };
   if (input && key.ctrl && !key.meta) {
     if (input === 'j') {
       const next = insertAt(value, cursor, '\n');
@@ -123,6 +131,8 @@ export function reduceInput(
     }
     if (input === 'a') return { state: { ...state, cursor: 0 } };
     if (input === 'e') return { state: { ...state, cursor: value.length } };
+    if (input === 'p') return { state: moveCursorUp(state, history) };
+    if (input === 'n') return { state: moveCursorDown(state, history) };
     if (input === 'u') return { state: { value: value.slice(cursor), cursor: 0, historyIndex: -1 } };
     if (input === 'k') return { state: { value: value.slice(0, cursor), cursor, historyIndex: -1 } };
     return { state };

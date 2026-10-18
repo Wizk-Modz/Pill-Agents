@@ -226,18 +226,18 @@ export function wrapSegments(segments: Segment[], width: number): Segment[][] {
 
   for (const token of tokenize(segments)) {
     if (/^\s+$/.test(token.text) && current.length === 0) continue;
-    if (length + token.text.length > limit && current.length > 0) pushLine();
-    let text = token.text;
-    while (text.length > limit) {
-      const chunk = text.slice(0, limit);
-      current.push({ ...token, text: chunk });
-      length += chunk.length;
-      text = text.slice(limit);
+    // Đếm theo code point để khớp với displayWidth và không tách đôi cặp surrogate.
+    let rest = [...token.text];
+    if (length + rest.length > limit && current.length > 0) pushLine();
+    while (rest.length > limit) {
+      current.push({ ...token, text: rest.slice(0, limit).join('') });
+      length += limit;
+      rest = rest.slice(limit);
       pushLine();
     }
-    if (text) {
-      current.push({ ...token, text });
-      length += text.length;
+    if (rest.length) {
+      current.push({ ...token, text: rest.join('') });
+      length += rest.length;
     }
   }
   if (current.length) pushLine();

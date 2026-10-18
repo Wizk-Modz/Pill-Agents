@@ -86,6 +86,22 @@ test('reduceInput: ↑/↓ di chuyển giữa các dòng khi đang soạn nhiề
   assert.equal(down.state.cursor, cursor, 'quay lại đúng vị trí dòng hai');
 });
 
+test('reduceInput: Ctrl+P và Ctrl+N đi lịch sử như ↑/↓', () => {
+  const history = ['lệnh một', 'lệnh hai'];
+  const up = reduceInput({ value: '', cursor: 0, historyIndex: -1 }, 'p', { ...EMPTY_KEY, ctrl: true }, history);
+  assert.equal(up.state.value, 'lệnh hai');
+  const down = reduceInput(up.state, 'n', { ...EMPTY_KEY, ctrl: true }, history);
+  assert.equal(down.state.value, '', 'về lại draft rỗng');
+});
+
+test('reduceInput: Ctrl+P di chuyển con trỏ khi đang soạn nhiều dòng', () => {
+  const value = 'dòng một\ndòng hai';
+  const cursor = value.indexOf('hai') + 3;
+  const moved = reduceInput({ value, cursor, historyIndex: -1 }, 'p', { ...EMPTY_KEY, ctrl: true }, ['x']);
+  assert.equal(moved.state.value, value, 'không được đổi sang lịch sử');
+  assert.equal(moved.state.cursor, 8, 'giữ cột cuối dòng đầu');
+});
+
 test('renderMarkdown: heading, bullet, code fence và inline', () => {
   const lines = renderMarkdown('# Tiêu đề\n- mục **đậm**\n```\ncode\n```', 60);
   const plain = lines.map((segments) => segments.map((segment) => segment.text).join(''));
@@ -100,6 +116,21 @@ test('renderMarkdown: wrap dòng dài theo độ rộng', () => {
     const text = line.map((segment) => segment.text).join('');
     assert.ok(text.length <= 30, `dòng quá dài: ${text.length}`);
   }
+});
+
+test('renderMarkdown: wrap không tách đôi cặp surrogate', () => {
+  const source = `x${'😀'.repeat(12)}`;
+  const lines = renderMarkdown(source, 10);
+  const plain = lines.map((segments) => segments.map((segment) => segment.text).join(''));
+  assert.ok(plain.length > 1, 'phải wrap thành nhiều dòng');
+  for (const line of plain) {
+    for (const char of line) {
+      const code = char.codePointAt(0)!;
+      assert.ok(code < 0xd800 || code > 0xdfff, `surrogate lẻ trong "${line}"`);
+    }
+    assert.ok([...line].length <= 10, `dòng quá dài: ${[...line].length}`);
+  }
+  assert.equal(plain.join(''), source, 'không được mất ký tự');
 });
 
 test('renderMarkdown: bảng markdown thành khung box-drawing', () => {

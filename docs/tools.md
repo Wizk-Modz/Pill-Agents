@@ -63,9 +63,13 @@ Khi gặp lỗi khớp nhiều lần, model nên dùng chuỗi dài hơn (kèm n
 Chạy lệnh shell trong thư mục làm việc.
 
 ```
-command  Lệnh cần chạy (chạy qua /bin/sh -c)
+command  Lệnh cần chạy
 timeout  Timeout tính bằng giây (mặc định 120, tối đa 600)
 ```
+
+Shell chọn theo nền tảng qua `resolveShell()`: `/bin/sh -c` trên Linux/macOS/Termux, `cmd.exe /d /s /c` trên Windows.
+
+Tiến trình con luôn có `TMPDIR`, `TMP`, `TEMP` trỏ tới `os.tmpdir()` nếu môi trường cha chưa đặt (xem `childEnv()`) — Termux không có `/tmp` mà dùng `$PREFIX/tmp`.
 
 Lệnh thoát khác 0 **không** ném lỗi mà trả `isError: true` kèm stdout/stderr — để model đọc được thông báo lỗi và tự sửa.
 

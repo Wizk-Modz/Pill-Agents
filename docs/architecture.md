@@ -18,18 +18,19 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 
 | File | Trách nhiệm | Dòng |
 |---|---|---|
-| `src/main.tsx` | Điểm vào: nạp config, tạo agent, mở TUI | 38 |
-| `src/config.ts` | Đọc `settings.json` và biến môi trường | 60 |
+| `src/main.tsx` | Điểm vào: nạp config, tạo agent, mở TUI | 144 |
+| `src/config.ts` | Đọc `settings.json` và biến môi trường | 83 |
 | `src/instructions.ts` | Nạp `PILL.md` global + project | 64 |
-| `src/types.ts` | Kiểu dữ liệu dùng chung | 24 |
-| `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 131 |
-| `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 240 |
-| `src/agent.ts` | Vòng lặp agent, quản lý hội thoại, lưu phiên | 220 |
-| `src/ui/App.tsx` | Màn hình chính, xử lý phím, xếp hàng tin nhắn | 493 |
-| `src/ui/InputBox.tsx` | Ô nhập nhiều dòng, logic con trỏ, history | 254 |
+| `src/types.ts` | Kiểu dữ liệu dùng chung | 30 |
+| `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 153 |
+| `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 259 |
+| `src/agent.ts` | Vòng lặp agent, quản lý hội thoại, lưu phiên | 221 |
+| `src/ui/App.tsx` | Màn hình chính, xử lý phím, xếp hàng tin nhắn | 590 |
+| `src/ui/InputBox.tsx` | Ô nhập nhiều dòng, logic con trỏ, history | 264 |
 | `src/ui/useKeys.ts` | Parse phím thô từ stdin | 246 |
 | `src/ui/markdown.ts` | Render markdown thành chuỗi ANSI | 363 |
-| `src/ui/Transcript.tsx` | Chuyển item hội thoại thành dòng hiển thị | 122 |
+| `src/ui/Transcript.tsx` | Chuyển item hội thoại thành dòng hiển thị | 129 |
+| `src/ui/commands.ts` | Gợi ý lệnh gạch chéo khi gõ `/` | 27 |
 
 ## Luồng một lượt
 
@@ -53,6 +54,8 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 ```
 
 **Điểm quan trọng:** mọi tool call trong một lượt đều phải có kết quả ghi vào hội thoại, kể cả khi bị huỷ. API yêu cầu mỗi `tool_call` phải có message `tool` tương ứng, nếu thiếu thì lượt sau sẽ lỗi.
+
+Lượt xong, App lấy tin kế tiếp trong hàng đợi và đưa lại qua `submit()` — nên lệnh gạch chéo xếp hàng vẫn được thực thi như lệnh, không bị gửi cho model như tin nhắn thường.
 
 ## Quản lý state trong App
 
@@ -143,7 +146,7 @@ const cached = cache.get(String(item.id));
 if (!cached) { cache.set(key, itemToLines(item, columns)); }
 ```
 
-Cache bị xoá khi: đổi độ rộng terminal, tool có kết quả mới, toggle thinking.
+Cache bị xoá khi: đổi độ rộng terminal (kiểm tra ngay trong `useMemo`, vì `useEffect` chạy sau khi memo đã đọc cache cũ), tool có kết quả mới, toggle thinking.
 
 ## Cấu hình
 
@@ -156,6 +159,14 @@ Thứ tự ưu tiên (cao → thấp):
 ```
 
 Thư mục cấu hình tự xác định qua `homedir()`: `~/.pill` trên Linux/macOS/Termux, `%USERPROFILE%\.pill` trên Windows. Ghi đè bằng `PILL_CONFIG_DIR`.
+
+## Nền tảng
+
+Không hardcode đường dẫn POSIX:
+
+- Shell của tool `bash` chọn theo nền tảng qua `resolveShell()`: `/bin/sh -c` trên Linux/macOS/Termux, `cmd.exe /d /s /c` trên Windows.
+- Thư mục tạm luôn lấy từ `os.tmpdir()` (biến `$TMPDIR`), không mặc định `/tmp` — Termux dùng `$PREFIX/tmp`. Tiến trình con của `bash` được bổ sung `TMPDIR`/`TMP`/`TEMP` khi môi trường cha thiếu (`childEnv()`).
+- `buildSystemPrompt()` nêu thư mục tạm thật của máy cho model, để model không tự đoán `/tmp`.
 
 ## PILL.md
 

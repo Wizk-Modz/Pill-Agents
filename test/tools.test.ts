@@ -4,8 +4,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createTools } from '../src/tools.js';
 import { EMPTY_KEY as noKey, reduceInput, reduceString } from '../src/ui/InputBox.js';
+import { childEnv, createTools, resolveShell } from '../src/tools.js';
 
 // Tạo thư mục tạm cho mỗi test.
 async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
@@ -62,6 +62,26 @@ test('bash trả về lỗi thay vì ném khi lệnh fail', async () => {
   });
 });
 
+test('resolveShell chọn shell theo nền tảng', () => {
+  assert.deepEqual(resolveShell('linux', {}), { command: '/bin/sh', args: ['-c'] });
+  assert.deepEqual(resolveShell('darwin', {}), { command: '/bin/sh', args: ['-c'] });
+  assert.deepEqual(resolveShell('win32', { COMSPEC: 'C:\\Windows\\system32\\cmd.exe' }), {
+    command: 'C:\\Windows\\system32\\cmd.exe',
+    args: ['/d', '/s', '/c'],
+  });
+  assert.equal(resolveShell('win32', {}).command, 'cmd.exe', 'thiếu COMSPEC thì dùng cmd.exe');
+});
+
+test('childEnv bổ sung thư mục tạm khi môi trường cha thiếu', () => {
+  const env = childEnv({});
+  assert.equal(env.TMPDIR, tmpdir());
+  assert.equal(env.TEMP, tmpdir());
+  assert.equal(env.TMP, tmpdir());
+  const kept = childEnv({ TMPDIR: '/duong/dan/rieng' });
+  assert.equal(kept.TMPDIR, '/duong/dan/rieng', 'giữ nguyên giá trị đã có');
+  assert.equal(childEnv({ TMPDIR: '' }).TMPDIR, tmpdir(), 'thay cả giá trị rỗng');
+});
+
 test('glob và grep tìm đúng file', async () => {
   await withTempDir(async (dir) => {
     await writeFile(path.join(dir, 'a.ts'), 'const needle = 1;', 'utf8');
@@ -74,6 +94,15 @@ test('glob và grep tìm đúng file', async () => {
     const grepResult = await grep.run({ pattern: 'needle', glob: '*.ts' }, signal);
     assert.match(grepResult.content, /a\.ts:1/);
     assert.doesNotMatch(grepResult.content, /b\.js/);
+  });
+});
+
+test('grep tìm được pattern bắt đầu bằng dấu gạch ngang', async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(path.join(dir, 'co.txt'), 'dòng có -ok trong đó', 'utf8');
+    const grep = tool(dir, 'grep');
+    const result = await grep.run({ pattern: '-ok' }, new AbortController().signal);
+    assert.match(result.content, /-ok/);
   });
 });
 
