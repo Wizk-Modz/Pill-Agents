@@ -34,6 +34,7 @@ src/
 ├── llm.ts              Gọi API qua SDK openai
 ├── tools.ts            6 tool
 ├── agent.ts            Vòng lặp agent
+├── statusline.ts       Chạy lệnh statusLine, lấy dòng đầu stdout
 └── ui/
     ├── App.tsx         Màn hình chính
     ├── InputBox.tsx    Ô nhập
@@ -44,9 +45,10 @@ src/
 
 test/
 ├── tools.test.ts        Tool file, shell theo nền tảng, input reducer
-├── keys.test.ts         Parse phím và markdown
+├── keys.test.ts         Parse phím, markdown, khung spinner
 ├── instructions.test.ts Nạp PILL.md
-├── agent.test.ts        System prompt
+├── agent.test.ts        System prompt: thư mục, tool, các mục
+├── statusline.test.ts   Dòng trạng thái: đọc settings.json, chạy lệnh, lấy dòng đầu stdout
 └── mock-server.mjs      Mock API (không phải test tự động)
 ```
 
@@ -60,16 +62,17 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-40 test, bao gồm:
+57 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
 | Tool | ghi/đọc file, edit từ chối khớp nhiều lần, bash trả lỗi không ném, glob/grep, pattern bắt đầu bằng `-`, shell và thư mục tạm theo nền tảng |
 | Input | Enter gửi, `\`+Enter xuống dòng, history, Ctrl+P/Ctrl+N, con trỏ nhiều dòng, paste |
 | Phím | mũi tên khi escape bị tách, chuột SGR, bracketed paste, tiếng Việt |
-| Markdown | heading/bullet/code, bảng box-drawing, căn lề, thu hẹp, wrap, cặp surrogate |
+| Markdown | heading theo cấp, bullet, quote lồng nhau, khối code (thụt lề, cắt dòng, màu mặc định), bảng box-drawing, căn lề, thu hẹp, wrap, cặp surrogate, đậm/nghiêng/đậm nghiêng/gạch ngang |
 | PILL.md | global + project, thư mục cha, file rỗng |
-| Agent | system prompt nêu thư mục làm việc và thư mục tạm |
+| Agent | system prompt: thư mục làm việc, thư mục tạm, 6 tool, các mục chính |
+| Trạng thái | đọc `statusLine`, lấy dòng đầu stdout, JSON gửi qua stdin, thư mục chạy, timeout, lệnh lỗi |
 
 Test không cần API key — không nhóm nào gọi mạng.
 
@@ -119,6 +122,10 @@ Mock trả về:
 | Duyệt tool | Gửi "chạy lệnh", bấm `y` |
 | Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → hiện `⏳ 1 chờ` |
 | Thinking | Cần mock trả `reasoning_content` (mock chính không có) |
+| Dòng trạng thái | Đặt `statusLine` trong `settings.json`, gửi một tin — footer phải hiện dòng đầu stdout của lệnh, spinner và `⏳ n chờ` vẫn nối sau |
+| Markdown inline | Cho mock trả dòng có `` `code` ``, `**đậm**`, `*nghiêng*`, `***đậm nghiêng***`, `~~gạch ngang~~` — transcript phải tô đúng style và không còn dấu markdown |
+| Markdown khối | Cho mock trả code fence có dòng thụt lề và dòng rất dài, tiêu đề `#`..`######`, quote `> > >` — code phải cắt đúng khung và không tô màu, sáu cấp tiêu đề phải khác nhau, quote phải hiện vạch theo cấp |
+| Spinner | Gửi "chạy lệnh" rồi để hộp duyệt mở — footer phải đổi khung braille liên tục, dừng khi lượt kết thúc |
 
 ## Thêm provider
 
@@ -166,6 +173,14 @@ Bật log bằng cách chạy trực tiếp:
 
 ```bash
 PILL_API_KEY=... PILL_BASE_URL=... node dist/src/main.js 2>err.log
+```
+
+**Dòng trạng thái không hiện:**
+
+Lệnh trong `statusLine` phải exit 0 và in **dòng đầu không rỗng** ra stdout trong vòng 5 giây. Lệnh lỗi, không in gì, hoặc quá hạn thì footer quay về dòng mặc định và không có thông báo lỗi — kiểm tra bằng cách chạy lệnh thủ công với JSON mẫu:
+
+```bash
+echo '{"version":"pill 0.1.0","model":"gpt-4o-mini","cwd":"/du-an","tokens":{"prompt":0,"completion":0},"busy":false,"queued":0}' | sh ~/.pill/statusline.sh
 ```
 
 ## Đóng góp

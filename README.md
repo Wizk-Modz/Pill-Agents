@@ -37,6 +37,8 @@ Biến môi trường chính: `PILL_API_KEY` (bắt buộc), `PILL_BASE_URL`, `P
 
 Tương tự `CLAUDE.md`, agent tự nạp `~/.pill/PILL.md` (mọi dự án) và `PILL.md` ở thư mục dự án cùng các thư mục cha (riêng dự án), chèn vào system prompt.
 
+Prompt nền dựng sẵn gồm 5 mục — môi trường, cách làm việc, tool đang có, viết code, trả lời ([chi tiết](docs/architecture.md#system-prompt-dựng-sẵn)); phần PILL.md được nối tiếp phía sau nên quy tắc của dự án luôn thắng.
+
 ```markdown
 # Quy tắc dự án
 
@@ -68,7 +70,20 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, tự động chạy sau khi lượt hiện tại xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model.
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking**.
 
-Footer hiển thị token đã dùng trong phiên: `↑` là prompt, `↓` là completion. `/clear` đặt lại về 0.
+Footer hiển thị token đã dùng trong phiên: `↑` là prompt, `↓` là completion. `/clear` đặt lại về 0. Khi agent đang chạy, footer hiện spinner braille kèm dòng `đang xử lý (Esc huỷ)`.
+
+Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), cấu hình `statusLine` trong `settings.json` — PillAgents chạy lệnh của bạn và lấy dòng đầu stdout:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.pill/statusline.sh"
+  }
+}
+```
+
+Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `cwd`, `tokens`, `busy`, `queued`). Chi tiết và script mẫu: [docs/configuration.md](docs/configuration.md#dòng-trạng-thái-tự-cấu-hình).
 
 Lệnh: `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 

@@ -30,6 +30,7 @@ src/
 ├── llm.ts            Gọi API qua SDK openai, streaming, usage, effort
 ├── tools.ts          6 tool: read/write/edit file, bash, grep, glob
 ├── agent.ts          Vòng lặp agent, quản lý hội thoại, lưu phiên
+├── statusline.ts     Chạy lệnh statusLine, lấy dòng đầu stdout
 └── ui/
     ├── App.tsx       Màn hình chính, state, xử lý phím
     ├── InputBox.tsx  Ô nhập nhiều dòng, con trỏ, history
@@ -102,14 +103,15 @@ Cache dòng theo `item.id`, xoá cache khi đổi `columns` hoặc khi tool có 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 40 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 57 test:
 
 | File | Nội dung |
 |---|---|
 | `test/tools.test.ts` | Ghi/đọc/sửa file, bash, glob, grep, input reducer |
-| `test/keys.test.ts` | Parse phím, chuột, paste, markdown, bảng |
+| `test/keys.test.ts` | Parse phím, chuột, paste, markdown inline, bảng, khối code, tiêu đề, quote lồng, khung spinner |
 | `test/instructions.test.ts` | Nạp PILL.md global/project/cha |
-| `test/agent.test.ts` | System prompt: thư mục làm việc, thư mục tạm |
+| `test/agent.test.ts` | System prompt: thư mục làm việc, thư mục tạm, 6 tool, các mục chính |
+| `test/statusline.test.ts` | Dòng trạng thái: đọc settings.json, chạy lệnh, lấy dòng đầu stdout |
 
 Test không gọi mạng — dùng thư mục tạm qua `withTempDir()`.
 
