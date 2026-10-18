@@ -151,6 +151,52 @@ Số liệu cộng dồn qua các lượt và các bước tool trong cùng phi�
 
 Cần endpoint trả `usage` khi `stream_options.include_usage` bật — hầu hết provider tương thích OpenAI đều hỗ trợ; nếu không, phần token tự ẩn.
 
+## Dòng trạng thái tự cấu hình
+
+Mặc định PillAgents tự dựng footer. Muốn hiển thị thông tin riêng, thêm `statusLine` vào `settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.pill/statusline.sh"
+  }
+}
+```
+
+Lệnh chạy lại khi trạng thái phiên đổi (model, effort, token, đang xử lý, số tin chờ), gộp các lần đổi liền nhau trong 150ms. **Dòng đầu không rỗng** của stdout thay cho phần `pill 0.1.0 · model · effort · token`; phần spinner `đang xử lý` và `⏳ n chờ` vẫn nối phía sau. Mã màu ANSI trong stdout được giữ nguyên, nên script tự tô màu được.
+
+Lệnh nhận JSON của phiên qua stdin:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `version` | Chuỗi phiên bản, ví dụ `pill 0.1.0` |
+| `model` | Model đang dùng |
+| `effort` | Mức suy luận, không có nếu chưa đặt |
+| `cwd` | Thư mục dự án |
+| `tokens.prompt`, `tokens.completion` | Token đã dùng trong phiên |
+| `busy` | Đang chạy lượt hay không |
+| `queued` | Số tin đang xếp hàng |
+
+Ví dụ `~/.pill/statusline.sh` (cần `jq`):
+
+```sh
+#!/bin/sh
+payload=$(cat)
+model=$(printf '%s' "$payload" | jq -r .model)
+prompt=$(printf '%s' "$payload" | jq -r .tokens.prompt)
+completion=$(printf '%s' "$payload" | jq -r .tokens.completion)
+printf '\033[36m%s\033[0m · %s · ↑%s ↓%s\n' "$(basename "$(pwd)")" "$model" "$prompt" "$completion"
+```
+
+Đặt quyền chạy: `chmod +x ~/.pill/statusline.sh`.
+
+### Lưu ý
+
+- Lệnh chạy trong thư mục dự án, qua shell của nền tảng (`/bin/sh -c`, Windows `cmd.exe /d /s /c`) và có sẵn `TMPDIR`, `TMP`, `TEMP`.
+- Lệnh lỗi, không in gì, hoặc chạy quá 5 giây → footer quay về dòng mặc định, không hiện thông báo lỗi.
+- Chỉ dòng đầu được dùng; dòng dài hơn 500 ký tự bị cắt bớt.
+
 ## Chạy với provider khác
 
 Mọi endpoint tương thích OpenAI đều dùng được — chỉ cần đổi `PILL_BASE_URL` và `PILL_MODEL`.

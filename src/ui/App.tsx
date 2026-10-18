@@ -4,6 +4,7 @@ import { Box, Text, useApp, useStdout } from 'ink';
 import { Agent } from '../agent.js';
 import { EFFORT_LEVELS, parseEffort, type Config } from '../config.js';
 import type { ToolCall, ToolResult, Usage } from '../types.js';
+import { runStatusLine, type StatusLineInput } from '../statusline.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
 import { applySuggestion, suggestCommands } from './commands.js';
 import { itemToLines, summarizeToolCall, type ItemBody, type TranscriptItem } from './Transcript.js';
@@ -13,6 +14,10 @@ type PendingApproval = { call: ToolCall; resolve: (approved: boolean) => void };
 
 const MAX_PROMPT_LINES = 8;
 const STREAM_FLUSH_MS = 60;
+const STATUS_DEBOUNCE_MS = 150;
+const SPINNER_INTERVAL_MS = 120;
+// Khung hình spinner braille, gồm cả U+283C (BRAILLE PATTERN DOTS-346).
+export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const APPROVAL_HEIGHT = 2;
 const WHEEL_LINES = 3;
 
@@ -69,6 +74,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const [tokenUsage, setTokenUsage] = useState({ prompt: 0, completion: 0, last: 0 });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [input, setInput] = useState<InputState>({ value: '', cursor: 0, historyIndex: -1 });
+  const [statusText, setStatusText] = useState<string | undefined>(undefined);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
 
   const idRef = useRef(0);
   const textRef = useRef('');
@@ -376,6 +383,57 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
   const suggestions = useMemo(() => suggestCommands(input.value), [input.value]);
   const activeSuggestion = suggestions.length ? suggestions[Math.min(suggestionIndex, suggestions.length - 1)] : null;
+  // Dòng trạng thái mặc định, dùng khi người dùng chưa cấu hình statusLine.
+  const builtinStatus = `${version} · ${config.model}${config.effort ? ` · ${config.effort}` : ''}`;
+
+  // Gói mọi thứ lệnh statusLine nhận được vào một chuỗi để effect chạy lại đúng lúc.
+  const statusCommand = config.statusLine?.command;
+  const statusSignature = [
+    statusCommand ?? '',
+    builtinStatus,
+    tokenUsage.prompt,
+    tokenUsage.completion,
+    busy,
+    queue.length,
+  ].join('|');
+
+  // Chạy lệnh statusLine sau khi trạng thái phiên đổi, gộp các lần đổi liền nhau. Mọi giá trị
+  // effect đọc đều nằm trong statusSignature nên chỉ cần nó trong danh sách phụ thuộc.
+  useEffect(() => {
+    if (!statusCommand) {
+      setStatusText(undefined);
+      return;
+    }
+    const input: StatusLineInput = {
+      version,
+      model: config.model,
+      effort: config.effort,
+      cwd: config.cwd,
+      tokens: { prompt: tokenUsage.prompt, completion: tokenUsage.completion },
+      busy,
+      queued: queue.length,
+    };
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void runStatusLine({ command: statusCommand, cwd: config.cwd, input }).then((line) => {
+        if (!cancelled) setStatusText(line);
+      });
+    }, STATUS_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [statusSignature]);
+
+  // Quay spinner trong lúc agent chạy; dừng hẳn khi rảnh để không render thừa. Khung hình không
+  // nằm trong statusSignature nên lệnh statusLine không bị chạy lại theo nhịp spinner.
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => {
+      setSpinnerFrame((frame) => (frame + 1) % SPINNER_FRAMES.length);
+    }, SPINNER_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [busy]);
 
   const inputLines = countInputLines(input.value, input.cursor, columns, MAX_PROMPT_LINES);
   const suggestionHeight = suggestions.length ? suggestions.length + 1 : 0;
@@ -564,9 +622,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
       <Box justifyContent="space-between">
         <Text dimColor wrap="truncate-end">
-          {version} · {config.model}
-          {config.effort ? <Text dimColor> · {config.effort}</Text> : null}
-          {tokenUsage.last > 0 ? (
+          {statusText ?? builtinStatus}
+          {!statusText && tokenUsage.last > 0 ? (
             <Text>
               {' · '}
               <Text color="magenta">↑{formatTokens(tokenUsage.prompt)}</Text>
@@ -574,7 +631,9 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
               <Text color="cyan">↓{formatTokens(tokenUsage.completion)}</Text>
             </Text>
           ) : null}
-          {busy ? <Text color="yellow"> · ● đang xử lý (Esc huỷ)</Text> : null}
+          {busy ? (
+            <Text color="yellow"> · {SPINNER_FRAMES[spinnerFrame] ?? '⠼'} đang xử lý (Esc huỷ)</Text>
+          ) : null}
           {queue.length > 0 ? <Text color="cyan"> · ⏳ {queue.length} chờ</Text> : null}
         </Text>
         <Text dimColor wrap="truncate-end">

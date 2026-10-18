@@ -15,6 +15,12 @@ export type Config = {
   maxSteps?: number;
   configDir: string;
   effort?: Effort;
+  statusLine?: StatusLineConfig;
+};
+
+export type StatusLineConfig = {
+  type?: 'command';
+  command: string;
 };
 
 // Đọc số bước tối đa; báo lỗi nếu không phải số nguyên dương.
@@ -34,9 +40,20 @@ export function parseEffort(value: string | undefined): Effort | undefined {
   return (EFFORT_LEVELS as string[]).includes(normalized) ? (normalized as Effort) : undefined;
 }
 
+// Đọc mục statusLine; chỉ nhận type "command" kèm lệnh không rỗng, bỏ qua phần còn lại.
+export function parseStatusLine(value: unknown): StatusLineConfig | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.type !== undefined && record.type !== 'command') return undefined;
+  const command = typeof record.command === 'string' ? record.command.trim() : '';
+  if (!command) return undefined;
+  return record.type === 'command' ? { type: 'command', command } : { command };
+}
+
 type Settings = {
   env?: Record<string, string>;
   model?: string;
+  statusLine?: unknown;
 };
 
 // Xác định thư mục cấu hình theo hệ điều hành, tôn trọng biến ghi đè.
@@ -79,5 +96,6 @@ export function loadConfig(cwd: string = process.cwd()): Config {
     maxSteps: parseMaxSteps(pick('PILL_MAX_STEPS')),
     configDir: dir,
     effort: parseEffort(pick('PILL_EFFORT')),
+    statusLine: parseStatusLine(settings.statusLine),
   };
 }
