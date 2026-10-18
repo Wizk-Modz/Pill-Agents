@@ -2,6 +2,7 @@
 import OpenAI from 'openai';
 import type { ChatCompletionChunk, ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import type { ChatMessage, ToolCall, ToolSpec, Usage } from './types.js';
+import type { Effort } from './config.js';
 
 // Trường mở rộng của proxy, không có trong type chuẩn của SDK.
 type DeltaExtras = {
@@ -63,6 +64,7 @@ export async function streamChat(options: {
   signal: AbortSignal;
   onText: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
+  effort?: Effort;
 }): Promise<{ content: string; toolCalls: ToolCall[]; usage?: Usage }> {
   const client = new OpenAI({
     apiKey: options.apiKey,
@@ -83,6 +85,7 @@ export async function streamChat(options: {
     model: options.model,
     messages: options.messages.map(toWireMessage),
     ...(tools.length ? { tools } : {}),
+    ...(options.effort ? { reasoning_effort: options.effort } : {}),
   };
 
   let content = '';

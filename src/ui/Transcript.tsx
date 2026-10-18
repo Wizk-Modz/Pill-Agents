@@ -99,13 +99,20 @@ export function itemToLines(item: TranscriptItem, width: number): string[] {
       // Sau khi xong, khối thinking thu gọn thành một dòng; ấn Ctrl+O để mở lại.
       const label = item.seconds ? `Thought for ${item.seconds}s` : 'Thinking';
       if (item.expanded === false) {
-        return [paintSegments([{ text: `  ✻ ${label} (ctrl+o để xem)`, color: 'gray', dim: true, italic: true }])];
+        // Không dùng italic cho dòng này: nhiều terminal render italic làm dính chữ.
+        return [
+          paintSegments([
+            { text: `  ✻ ${label} `, color: 'gray', dim: true },
+            { text: '(ctrl+o để xem)', color: 'gray', dim: true },
+          ]),
+        ];
       }
-      const tail = item.text.split('\n').slice(-THINKING_MAX_LINES);
-      const lines = renderStyledText(tail.join('\n'), width - 4, { dim: true, italic: true, color: 'gray' });
+      // Nội dung thinking là markdown nên render đầy đủ, chỉ giữ style mờ.
+      const tail = item.text.split('\n').slice(-THINKING_MAX_LINES).join('\n');
+      const lines = renderMarkdown(tail, width - 4);
       return [
         paintSegments([{ text: `  ✻ ${label}`, color: 'gray', dim: true, italic: true }]),
-        ...lines.map((line) => paintSegments([{ text: '    ' }, ...line])),
+        ...lines.map((line) => paintSegments([{ text: '    ' }, ...line.map((segment) => ({ ...segment, dim: true }))])),
       ];
     }
     case 'info':

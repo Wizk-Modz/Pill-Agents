@@ -129,6 +129,8 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 | `/clear` | Xoá hội thoại, nạp lại PILL.md |
 | `/model` | Xem model hiện tại |
 | `/model <tên>` | Đổi model cho phiên này |
+| `/effort` | Xem mức suy luận hiện tại |
+| `/effort <mức>` | Đổi mức: `low`, `medium`, `high`, `xhigh`, `max` |
 | `/help` | Xem phím tắt |
 | `/exit`, `/quit` | Thoát |
 

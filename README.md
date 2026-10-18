@@ -65,12 +65,12 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
 
-Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, tự động chạy sau khi lượt hiện tại xong.
+Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, tự động chạy sau khi lượt hiện tại xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model.
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking**.
 
 Footer hiển thị token đã dùng trong phiên: `↑` là prompt, `↓` là completion. `/clear` đặt lại về 0.
 
-Lệnh: `/clear`, `/model <tên>`, `/help`, `/exit`.
+Lệnh: `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 
 ## Tool
 

@@ -2,9 +2,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useStdout } from 'ink';
 import { Agent } from '../agent.js';
-import type { Config } from '../config.js';
+import { EFFORT_LEVELS, parseEffort, type Config } from '../config.js';
 import type { ToolCall, ToolResult, Usage } from '../types.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
+import { applySuggestion, suggestCommands } from './commands.js';
 import { itemToLines, summarizeToolCall, type ItemBody, type TranscriptItem } from './Transcript.js';
 import { makeKey, useKeys, type KeyEvent } from './useKeys.js';
 
@@ -12,7 +13,7 @@ type PendingApproval = { call: ToolCall; resolve: (approved: boolean) => void };
 
 const MAX_PROMPT_LINES = 8;
 const STREAM_FLUSH_MS = 60;
-const APPROVAL_HEIGHT = 3;
+const APPROVAL_HEIGHT = 2;
 const WHEEL_LINES = 3;
 
 // Theo dõi kích thước terminal và cập nhật khi resize.
@@ -66,6 +67,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const [history, setHistory] = useState<string[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
   const [tokenUsage, setTokenUsage] = useState({ prompt: 0, completion: 0, last: 0 });
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [input, setInput] = useState<InputState>({ value: '', cursor: 0, historyIndex: -1 });
 
   const idRef = useRef(0);
@@ -74,19 +76,22 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const thinkingStartRef = useRef<number | null>(null);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  // Bản sao state cho handler bất đồng bộ: cập nhật ngay tại chỗ ghi state, không qua
+  // useEffect, để tránh ghi đè bằng giá trị cũ khi có nhiều cập nhật trong cùng một frame.
   const pendingRef = useRef<PendingApproval | null>(null);
   const busyRef = useRef(false);
   const inputRef = useRef(input);
   const scrollRef = useRef<number | null>(null);
   const queueRef = useRef<string[]>([]);
   const runTurnRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const submitRef = useRef<((text: string) => void) | null>(null);
   const lineCacheRef = useRef(new Map<string, string[]>());
+  const cacheWidthRef = useRef(columns);
 
-  // Các ref dưới đây được cập nhật ngay tại chỗ ghi state, không qua useEffect,
-  // để tránh ghi đè bằng giá trị cũ khi có nhiều cập nhật trong cùng một frame.
+  // Đưa con trỏ về gợi ý đầu tiên mỗi khi nội dung prompt thay đổi.
   useEffect(() => {
-    lineCacheRef.current.clear();
-  }, [columns]);
+    setSuggestionIndex(0);
+  }, [input.value]);
 
   // Ghi state kèm ref tương ứng, giữ ref luôn đồng bộ với state.
   const setBusySync = useCallback((value: boolean) => {
@@ -255,7 +260,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         const next = queueRef.current.shift();
         if (next) {
           setQueue([...queueRef.current]);
-          setTimeout(() => void runTurnRef.current?.(next), 0);
+          // Đi qua submit để lệnh gạch chéo xếp hàng được thực thi như lệnh, không gửi cho model.
+          setTimeout(() => submitRef.current?.(next), 0);
         }
       }
     },
@@ -290,10 +296,28 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         }
         return true;
       }
+      if (command === '/effort') {
+        const value = rest.join(' ').trim();
+        if (!value) {
+          pushItem({
+            kind: 'info',
+            text: `Effort hiện tại: ${config.effort ?? '(mặc định của model)'} • các mức: ${EFFORT_LEVELS.join(', ')}`,
+          });
+          return true;
+        }
+        const parsed = parseEffort(value);
+        if (!parsed) {
+          pushItem({ kind: 'error', text: `Mức effort không hợp lệ: ${value}. Chọn: ${EFFORT_LEVELS.join(', ')}` });
+          return true;
+        }
+        config.effort = parsed;
+        pushItem({ kind: 'info', text: `Đã đổi effort: ${parsed}` });
+        return true;
+      }
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /help /exit',
+          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /effort /help /exit',
         });
         return true;
       }
@@ -320,10 +344,17 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     },
     [pushItem, runCommand, runTurn],
   );
+  submitRef.current = submit;
 
   // Toàn bộ transcript thành các dòng ANSI, cache từng mục để tránh render lại.
   const lines = useMemo<string[]>(() => {
     const cache = lineCacheRef.current;
+    // Bề rộng đổi thì dòng đã cache sai wrap: phải xoá ngay trong lúc tính, vì effect
+    // chạy sau khi memo đã đọc cache cũ và không kích hoạt render lại.
+    if (cacheWidthRef.current !== columns) {
+      cache.clear();
+      cacheWidthRef.current = columns;
+    }
     const output: string[] = [];
     for (const item of items) {
       const key = String(item.id);
@@ -343,8 +374,13 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     return output;
   }, [items, streaming, thinkingLive, columns]);
 
+  const suggestions = useMemo(() => suggestCommands(input.value), [input.value]);
+  const activeSuggestion = suggestions.length ? suggestions[Math.min(suggestionIndex, suggestions.length - 1)] : null;
+
   const inputLines = countInputLines(input.value, input.cursor, columns, MAX_PROMPT_LINES);
-  const chromeHeight = inputLines + 2 + (pendingApproval ? APPROVAL_HEIGHT : 0);
+  const suggestionHeight = suggestions.length ? suggestions.length + 1 : 0;
+  // Chiều cao chrome: ô nhập (đã gồm 2 đường kẻ), footer 1 dòng, bảng gợi ý và hộp duyệt tool.
+  const chromeHeight = inputLines + 1 + suggestionHeight + (pendingApproval ? APPROVAL_HEIGHT : 0);
   const viewportHeight = Math.max(3, rows - chromeHeight);
   const maxTop = Math.max(0, lines.length - viewportHeight);
   const top = scrollTop === null ? maxTop : Math.min(Math.max(0, scrollTop), maxTop);
@@ -425,8 +461,31 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         return;
       }
       if (key.escape) {
-        if (busyRef.current) abort();
+        if (busyRef.current) {
+          abort();
+        } else if (suggestions.length) {
+          applyInput({ value: '', cursor: 0, historyIndex: -1 });
+        }
         return;
+      }
+
+      // Bảng gợi ý lệnh đang mở: Tab điền, ↑/↓ di chuyển, Esc đóng.
+      if (suggestions.length) {
+        if (key.tab) {
+          const chosen = suggestions[Math.min(suggestionIndex, suggestions.length - 1)]!;
+          const value = applySuggestion(chosen);
+          applyInput({ value, cursor: value.length, historyIndex: -1 });
+          setSuggestionIndex(0);
+          return;
+        }
+        if (key.upArrow) {
+          setSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+          return;
+        }
+        if (key.downArrow) {
+          setSuggestionIndex((current) => (current + 1) % suggestions.length);
+          return;
+        }
       }
 
       // PageUp/PageDown cuộn theo trang; Shift+↑/↓ cuộn 3 dòng.
@@ -446,7 +505,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         applyInput(result.state);
       }
     },
-    [abort, applyInput, exit, history, scrollBy, submit, toggleThinking, viewportHeight],
+    [abort, applyInput, exit, history, scrollBy, submit, suggestions, suggestionIndex, toggleThinking, viewportHeight],
   );
 
   useKeys(handleKey);
@@ -476,6 +535,24 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         </Box>
       ) : null}
 
+      {suggestions.length ? (
+        <Box flexDirection="column" paddingX={1}>
+          {suggestions.map((command, index) => {
+            const active = command === activeSuggestion;
+            return (
+              <Text key={command.name} wrap="truncate-end">
+                <Text color={active ? 'cyan' : undefined} bold={active} inverse={active}>
+                  {' '}
+                  {command.name}
+                </Text>
+                <Text dimColor> {command.description}</Text>
+              </Text>
+            );
+          })}
+          <Text dimColor>Tab chọn · ↑↓ di chuyển · Esc đóng</Text>
+        </Box>
+      ) : null}
+
       <InputBox
         value={input.value}
         cursor={input.cursor}
@@ -486,8 +563,9 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       />
 
       <Box justifyContent="space-between">
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           {version} · {config.model}
+          {config.effort ? <Text dimColor> · {config.effort}</Text> : null}
           {tokenUsage.last > 0 ? (
             <Text>
               {' · '}
@@ -499,7 +577,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
           {busy ? <Text color="yellow"> · ● đang xử lý (Esc huỷ)</Text> : null}
           {queue.length > 0 ? <Text color="cyan"> · ⏳ {queue.length} chờ</Text> : null}
         </Text>
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           {scrolled
             ? `↑ đã cuộn ${maxTop - top} dòng · PageDown về cuối`
             : busy

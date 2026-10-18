@@ -1,5 +1,6 @@
 // Vòng lặp agent: gọi model, xử lý tool call và lưu phiên.
 import { mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { loadInstructions, renderInstructions } from './instructions.js';
 import { streamChat } from './llm.js';
@@ -18,7 +19,7 @@ export type AgentHandlers = {
 };
 
 // Tạo system prompt chi tiết, gắn với thư mục làm việc.
-function buildSystemPrompt(cwd: string): string {
+export function buildSystemPrompt(cwd: string): string {
   return [
     `Bạn là PillAgents, coding agent chạy trong terminal tại ${cwd}.`,
     'Bạn hỗ trợ người dùng làm việc với code: đọc hiểu, viết mới, sửa lỗi, chạy lệnh và kiểm thử.',
@@ -28,6 +29,7 @@ function buildSystemPrompt(cwd: string): string {
     '- Không đoán mò: đọc file và kiểm tra thực tế trước khi kết luận.',
     '- Chỉ thực hiện đúng phạm vi yêu cầu; không tự ý refactor hay thêm tính năng ngoài scope.',
     '- Không tạo file tài liệu mới trừ khi được yêu cầu rõ.',
+    `- File tạm: đặt trong ${tmpdir()} (biến $TMPDIR); đừng mặc định /tmp vì nhiều môi trường như Termux không có.`,
     '- Nếu yêu cầu mơ hồ và có nhiều cách hiểu khác nhau, hỏi lại thay vì tự chọn.',
     '',
     '## Dùng tool',
@@ -87,7 +89,8 @@ export class Agent {
   async send(input: string, signal: AbortSignal, handlers: AgentHandlers): Promise<void> {
     this.messages.push({ role: 'user', content: input });
     try {
-      for (let step = 0; step < this.config.maxSteps; step++) {
+      const maxSteps = this.config.maxSteps;
+      for (let step = 0; maxSteps === undefined || step < maxSteps; step++) {
         if (signal.aborted) return;
         handlers.onAssistantStart();
         let response: { content: string; toolCalls: ToolCall[]; usage?: Usage };
@@ -101,6 +104,7 @@ export class Agent {
             signal,
             onText: handlers.onText,
             onReasoning: handlers.onThinking,
+            effort: this.config.effort,
           });
         } catch (error) {
           if (signal.aborted) return;
@@ -122,7 +126,7 @@ export class Agent {
         const aborted = await this.runToolCalls(response.toolCalls, signal, handlers);
         if (aborted) return;
       }
-      throw new Error(`Đã đạt giới hạn ${this.config.maxSteps} bước trong một lượt.`);
+      throw new Error(`Đã đạt giới hạn ${maxSteps} bước trong một lượt.`);
     } finally {
       await this.saveSession();
     }
