@@ -77,11 +77,6 @@ export class Agent {
     );
   }
 
-  // Trả về system prompt hiện tại để giao diện hiển thị.
-  systemPrompt(): string {
-    return composeSystemPrompt(this.config.cwd, this.config.configDir);
-  }
-
   // Xoá hội thoại hiện tại và bắt đầu phiên mới.
   reset(): void {
     this.messages = [{ role: 'system', content: composeSystemPrompt(this.config.cwd, this.config.configDir) }];

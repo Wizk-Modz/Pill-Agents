@@ -2,6 +2,15 @@
 
 Coding agent chạy trong terminal, hoạt động với mọi endpoint tương thích OpenAI (OpenAI, DeepSeek, Groq, OpenRouter, proxy nội bộ…), dùng SDK chính thức `openai`.
 
+## Tài liệu
+
+| Tài liệu | Nội dung |
+|---|---|
+| [Cấu hình](docs/configuration.md) | settings.json, biến môi trường, PILL.md, provider khác |
+| [Tool](docs/tools.md) | 6 tool, tham số, giới hạn, cách thêm tool mới |
+| [Kiến trúc](docs/architecture.md) | Luồng dữ liệu, quyết định thiết kế, quản lý state |
+| [Phát triển](docs/development.md) | Build, test, kiểm thử TUI, quy ước code |
+
 ## Cài đặt
 
 ```bash
@@ -9,18 +18,10 @@ npm install
 npm run build
 ```
 
-Cấu hình theo một trong hai cách:
-
-**1. `settings.json` trong thư mục cấu hình** (khuyến nghị):
-
 ```bash
 mkdir -p ~/.pill
-cp settings.example.json ~/.pill/settings.json   # rồi điền key
+cp settings.example.json ~/.pill/settings.json   # rồi điền API key
 ```
-
-Thư mục cấu hình tự xác định theo hệ điều hành: `~/.pill` trên Linux/macOS/Termux, `%USERPROFILE%\.pill` trên Windows. Ghi đè bằng biến `PILL_CONFIG_DIR`.
-
-**2. File `.env`** ở thư mục dự án (dùng `--env-file-if-exists` khi chạy `npm start`).
 
 ## Chạy
 
@@ -30,28 +31,11 @@ npm start
 npm link && pill
 ```
 
-Biến môi trường (đặt trong `env` của `settings.json` hoặc biến môi trường thật; biến môi trường được ưu tiên):
-
-| Biến | Mặc định | Mô tả |
-|---|---|---|
-| `PILL_API_KEY` | — | API key (bắt buộc), fallback `OPENAI_API_KEY` |
-| `PILL_BASE_URL` | `https://api.openai.com/v1` | Endpoint proxy |
-| `PILL_MODEL` | `gpt-4o-mini` | Model |
-| `PILL_MAX_STEPS` | `25` | Số bước tool tối đa mỗi lượt |
-| `PILL_CONFIG_DIR` | `~/.pill` | Ghi đè thư mục cấu hình |
+Biến môi trường chính: `PILL_API_KEY` (bắt buộc), `PILL_BASE_URL`, `PILL_MODEL`, `PILL_MAX_STEPS`, `PILL_CONFIG_DIR`. Chi tiết và ví dụ với provider khác: [docs/configuration.md](docs/configuration.md).
 
 ## PILL.md — hướng dẫn cho agent
 
-Tương tự `CLAUDE.md`, agent tự động nạp file `PILL.md` và chèn vào system prompt:
-
-| Vị trí | Phạm vi |
-|---|---|
-| `~/.pill/PILL.md` | Mọi dự án (hướng dẫn chung của bạn) |
-| `PILL.md` ở thư mục dự án và các thư mục cha | Riêng dự án đó |
-
-File ở thư mục gần thư mục làm việc nhất được nạp sau cùng. File rỗng bị bỏ qua. Nội dung được chèn kèm chỉ thị ưu tiên cao hơn hành vi mặc định.
-
-Ví dụ `PILL.md` của dự án:
+Tương tự `CLAUDE.md`, agent tự nạp `~/.pill/PILL.md` (mọi dự án) và `PILL.md` ở thư mục dự án cùng các thư mục cha (riêng dự án), chèn vào system prompt.
 
 ```markdown
 # Quy tắc dự án
@@ -60,6 +44,8 @@ Ví dụ `PILL.md` của dự án:
 - Chạy `pnpm test` trước khi báo hoàn thành.
 - Trả lời bằng tiếng Việt.
 ```
+
+Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 
 ## Phím tắt
 
@@ -107,8 +93,6 @@ npm test
 
 ## Ghi chú kỹ thuật
 
-Gọi model qua SDK `openai` với `baseURL` trỏ tới endpoint cấu hình. SDK tự xử lý retry (2 lần, backoff) và timeout; `AbortSignal` được truyền vào để huỷ lượt.
+Gọi model qua SDK `openai` (retry 2 lần, backoff; `AbortSignal` để huỷ lượt). Hỗ trợ `reasoning_content` của DeepSeek/OpenRouter và proxy bỏ qua `stream: true`.
 
-Trường `reasoning_content` (DeepSeek/OpenRouter) không có trong type chuẩn của SDK nên được đọc qua cast — SDK không loại bỏ field lạ.
-
-Nếu proxy bỏ qua `stream: true` và trả JSON thường, SDK trả stream rỗng; client tự gọi lại không stream để lấy dữ liệu.
+Chi tiết: [docs/architecture.md](docs/architecture.md).

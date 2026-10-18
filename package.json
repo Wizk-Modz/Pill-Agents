@@ -6,6 +6,9 @@
   "bin": {
     "pill": "dist/src/main.js"
   },
+  "engines": {
+    "node": ">=22.9"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/src/main.js",

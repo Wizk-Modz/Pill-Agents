@@ -275,14 +275,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         }
         return true;
       }
-      if (command === '/system') {
-        pushItem({ kind: 'info', text: 'System prompt hiện tại:\n' + agent.systemPrompt() });
-        return true;
-      }
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /system /exit',
+          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /help /exit',
         });
         return true;
       }
