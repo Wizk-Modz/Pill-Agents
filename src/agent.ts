@@ -4,7 +4,7 @@ import path from 'node:path';
 import { loadInstructions, renderInstructions } from './instructions.js';
 import { streamChat } from './llm.js';
 import type { Config } from './config.js';
-import type { ChatMessage, ToolCall, ToolResult, ToolSpec } from './types.js';
+import type { ChatMessage, ToolCall, ToolResult, ToolSpec, Usage } from './types.js';
 
 export type AgentHandlers = {
   onAssistantStart: () => void;
@@ -12,6 +12,7 @@ export type AgentHandlers = {
   onThinking: (chunk: string) => void;
   onToolCall: (call: ToolCall) => void;
   onToolResult: (call: ToolCall, result: ToolResult) => void;
+  onUsage: (usage: Usage) => void;
   onTurnEnd: () => void;
   approve: (call: ToolCall) => Promise<boolean>;
 };
@@ -89,7 +90,7 @@ export class Agent {
       for (let step = 0; step < this.config.maxSteps; step++) {
         if (signal.aborted) return;
         handlers.onAssistantStart();
-        let response: { content: string; toolCalls: ToolCall[] };
+        let response: { content: string; toolCalls: ToolCall[]; usage?: Usage };
         try {
           response = await streamChat({
             baseUrl: this.config.baseUrl,
@@ -111,6 +112,7 @@ export class Agent {
           content: response.content || null,
           toolCalls: response.toolCalls.length ? response.toolCalls : undefined,
         });
+        if (response.usage) handlers.onUsage(response.usage);
 
         if (!response.toolCalls.length) {
           handlers.onTurnEnd();

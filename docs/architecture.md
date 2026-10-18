@@ -86,6 +86,26 @@ const scheduleFlush = () => {
 
 Cuối lượt gọi `flushNow()` để không mất phần text còn lại.
 
+## Đếm token
+
+`streamChat()` bật `stream_options: { include_usage: true }`, nên chunk cuối của stream chứa thống kê token. Các chunk khác có `usage: null`.
+
+```ts
+if (chunk.usage) {
+  usage = {
+    promptTokens: chunk.usage.prompt_tokens,
+    completionTokens: chunk.usage.completion_tokens,
+    totalTokens: chunk.usage.total_tokens,
+  };
+}
+```
+
+Agent gọi `handlers.onUsage(usage)` sau **mỗi** lần gọi model — một lượt có tool call sẽ gọi API nhiều lần, nên token được cộng dồn qua các bước. App giữ tổng tích luỹ của phiên, hiển thị ở footer dạng `↑42 ↓7` (`formatTokens()` rút gọn số ≥ 1000 thành `1.2k`).
+
+`/clear` đặt lại về 0.
+
+Nếu proxy không trả `usage` (một số proxy cũ), `usage` là `undefined` và footer ẩn phần token — không gây lỗi.
+
 ## Parse phím
 
 Ink có sẵn `useInput` nhưng có 2 vấn đề:

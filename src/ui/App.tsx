@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useApp, useStdout } from 'ink';
 import { Agent } from '../agent.js';
 import type { Config } from '../config.js';
-import type { ToolCall, ToolResult } from '../types.js';
+import type { ToolCall, ToolResult, Usage } from '../types.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
 import { itemToLines, summarizeToolCall, type ItemBody, type TranscriptItem } from './Transcript.js';
 import { makeKey, useKeys, type KeyEvent } from './useKeys.js';
@@ -47,6 +47,12 @@ function approvalDetail(call: ToolCall): string {
   return detail.replace(/\s+/g, ' ').trim();
 }
 
+// Rút gọn số token: 1234 thành 1.2k.
+export function formatTokens(value: number): string {
+  if (value < 1000) return String(value);
+  return `${(value / 1000).toFixed(1)}k`;
+}
+
 // Màn hình chính của PillAgents.
 export function App({ agent, config, version }: { agent: Agent; config: Config; version: string }): React.ReactElement {
   const { exit } = useApp();
@@ -59,6 +65,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const [scrollTop, setScrollTop] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
+  const [tokenUsage, setTokenUsage] = useState({ prompt: 0, completion: 0, last: 0 });
   const [input, setInput] = useState<InputState>({ value: '', cursor: 0, historyIndex: -1 });
 
   const idRef = useRef(0);
@@ -216,6 +223,13 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
             }),
           );
         },
+        onUsage: (usage: Usage) => {
+          setTokenUsage((current) => ({
+            prompt: current.prompt + usage.promptTokens,
+            completion: current.completion + usage.completionTokens,
+            last: usage.totalTokens,
+          }));
+        },
         onTurnEnd: () => {
           commitThinking();
           commitStreaming();
@@ -261,6 +275,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/clear') {
         agent.reset();
         setItems([]);
+        setTokenUsage({ prompt: 0, completion: 0, last: 0 });
         setScrollSync(null);
         pushItem({ kind: 'info', text: 'Đã xoá hội thoại.' });
         return true;
@@ -473,6 +488,14 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       <Box justifyContent="space-between">
         <Text dimColor>
           {version} · {config.model}
+          {tokenUsage.last > 0 ? (
+            <Text>
+              {' · '}
+              <Text color="magenta">↑{formatTokens(tokenUsage.prompt)}</Text>
+              <Text dimColor> </Text>
+              <Text color="cyan">↓{formatTokens(tokenUsage.completion)}</Text>
+            </Text>
+          ) : null}
           {busy ? <Text color="yellow"> · ● đang xử lý (Esc huỷ)</Text> : null}
           {queue.length > 0 ? <Text color="cyan"> · ⏳ {queue.length} chờ</Text> : null}
         </Text>

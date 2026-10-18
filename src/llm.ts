@@ -1,7 +1,7 @@
 // Client gọi endpoint chat completions tương thích OpenAI qua SDK chính thức.
 import OpenAI from 'openai';
 import type { ChatCompletionChunk, ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
-import type { ChatMessage, ToolCall, ToolSpec } from './types.js';
+import type { ChatMessage, ToolCall, ToolSpec, Usage } from './types.js';
 
 // Trường mở rộng của proxy, không có trong type chuẩn của SDK.
 type DeltaExtras = {
@@ -63,7 +63,7 @@ export async function streamChat(options: {
   signal: AbortSignal;
   onText: (chunk: string) => void;
   onReasoning?: (chunk: string) => void;
-}): Promise<{ content: string; toolCalls: ToolCall[] }> {
+}): Promise<{ content: string; toolCalls: ToolCall[]; usage?: Usage }> {
   const client = new OpenAI({
     apiKey: options.apiKey,
     baseURL: options.baseUrl.replace(/\/$/, ''),
@@ -89,9 +89,21 @@ export async function streamChat(options: {
   const calls = new Map<number, ToolCall>();
   let chunks = 0;
 
-  const stream = await client.chat.completions.create({ ...params, stream: true }, { signal: options.signal });
+  const stream = await client.chat.completions.create(
+    { ...params, stream: true, stream_options: { include_usage: true } },
+    { signal: options.signal },
+  );
+  let usage: Usage | undefined;
   for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
     chunks += 1;
+    // Chunk cuối cùng chứa usage; các chunk khác có usage null.
+    if (chunk.usage) {
+      usage = {
+        promptTokens: chunk.usage.prompt_tokens,
+        completionTokens: chunk.usage.completion_tokens,
+        totalTokens: chunk.usage.total_tokens,
+      };
+    }
     const delta = chunk.choices[0]?.delta;
     if (!delta) continue;
     // Hỗ trợ cả reasoning_content (DeepSeek/OpenRouter) và reasoning (một số proxy).
@@ -109,7 +121,7 @@ export async function streamChat(options: {
   if (!chunks) {
     const completion = await client.chat.completions.create(params, { signal: options.signal });
     const message = completion.choices[0]?.message;
-    if (!message) return { content: '', toolCalls: [] };
+    if (!message) return { content: '', toolCalls: [], usage };
     const extras = message as DeltaExtras;
     if (extras.reasoning_content) options.onReasoning?.(extras.reasoning_content);
     if (message.content) {
@@ -124,8 +136,15 @@ export async function streamChat(options: {
         name: call.function.name,
         arguments: call.function.arguments,
       }));
-    return { content, toolCalls };
+    const fallbackUsage = completion.usage
+      ? {
+          promptTokens: completion.usage.prompt_tokens,
+          completionTokens: completion.usage.completion_tokens,
+          totalTokens: completion.usage.total_tokens,
+        }
+      : usage;
+    return { content, toolCalls, usage: fallbackUsage };
   }
 
-  return { content, toolCalls: collectToolCalls(calls) };
+  return { content, toolCalls: collectToolCalls(calls), usage };
 }

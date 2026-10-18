@@ -121,3 +121,12 @@ test('reduceInput di chuyển lịch sử và sửa ký tự', () => {
   assert.equal(edited.state.value, 'ac');
   assert.equal(edited.state.cursor, 1);
 });
+
+test('formatTokens rút gọn số lớn', async () => {
+  const { formatTokens } = await import('../src/ui/App.js');
+  assert.equal(formatTokens(42), '42');
+  assert.equal(formatTokens(999), '999');
+  assert.equal(formatTokens(1000), '1.0k');
+  assert.equal(formatTokens(12345), '12.3k');
+  assert.equal(formatTokens(1000000), '1000.0k');
+});

@@ -22,3 +22,9 @@ export type ToolSpec = {
   needsApproval: boolean;
   run: (args: Record<string, unknown>, signal: AbortSignal) => Promise<ToolResult>;
 };
+
+export type Usage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};

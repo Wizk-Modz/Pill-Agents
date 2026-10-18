@@ -134,6 +134,21 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 
 Lệnh không nhận diện được sẽ báo `Lệnh không hỗ trợ: <tên>`.
 
+## Token usage
+
+Footer hiển thị token đã dùng trong phiên:
+
+```
+pill 0.1.0 · gpt-4o-mini · ↑1.2k ↓340
+```
+
+- `↑` — prompt token (nội dung gửi lên model)
+- `↓` — completion token (nội dung model sinh ra)
+
+Số liệu cộng dồn qua các lượt và các bước tool trong cùng phiên. `/clear` đặt lại về 0. Số từ 1000 trở lên được rút gọn (`1.2k`).
+
+Cần endpoint trả `usage` khi `stream_options.include_usage` bật — hầu hết provider tương thích OpenAI đều hỗ trợ; nếu không, phần token tự ẩn.
+
 ## Chạy với provider khác
 
 Mọi endpoint tương thích OpenAI đều dùng được — chỉ cần đổi `PILL_BASE_URL` và `PILL_MODEL`.

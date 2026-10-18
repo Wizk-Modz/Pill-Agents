@@ -68,6 +68,8 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, tự động chạy sau khi lượt hiện tại xong.
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking**.
 
+Footer hiển thị token đã dùng trong phiên: `↑` là prompt, `↓` là completion. `/clear` đặt lại về 0.
+
 Lệnh: `/clear`, `/model <tên>`, `/help`, `/exit`.
 
 ## Tool
