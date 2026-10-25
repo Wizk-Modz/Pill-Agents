@@ -27,7 +27,8 @@ export type KeyEvent =
   | { type: 'key'; key: ParsedKey; char: string }
   | { type: 'text'; text: string }
   | { type: 'paste'; text: string }
-  | { type: 'wheel'; direction: 'up' | 'down' };
+  | { type: 'wheel'; direction: 'up' | 'down' }
+  | { type: 'click'; row: number; column: number };
 
 // Tạo đối tượng key với mọi cờ mặc định là false.
 export function makeKey(partial: Partial<ParsedKey> = {}): ParsedKey {
@@ -132,9 +133,19 @@ export function parseInput(buffer: string, flush: boolean): { events: KeyEvent[]
 
       const mouse = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/.exec(rest);
       if (mouse) {
-        const button = Number(mouse[1]);
-        if (button === 64) events.push({ type: 'wheel', direction: 'up' });
-        else if (button === 65) events.push({ type: 'wheel', direction: 'down' });
+        const code = Number(mouse[1]);
+        const column = Number(mouse[2]);
+        const row = Number(mouse[3]);
+        const button = code & 3;
+        const press = mouse[4] === 'M';
+        if ((code & 64) !== 0) {
+          // Bánh xe lăn; bỏ qua bánh ngang và sự kiện di chuyển.
+          if (button === 0) events.push({ type: 'wheel', direction: 'up' });
+          else if (button === 1) events.push({ type: 'wheel', direction: 'down' });
+        } else if (press && button === 0 && (code & 32) === 0 && (code & 4) === 0) {
+          // Chuột trái nhấn; bỏ qua kéo thả và Shift+click để giữ chọn văn bản.
+          events.push({ type: 'click', row, column });
+        }
         index += mouse[0].length;
         continue;
       }

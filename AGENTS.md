@@ -34,11 +34,22 @@ src/
 ├── agent.ts          Vòng lặp agent, quản lý hội thoại, lưu phiên
 ├── statusline.ts     Chạy lệnh statusLine, lấy dòng đầu stdout
 └── ui/
-    ├── App.tsx       Màn hình chính, state, xử lý phím
+    ├── App.tsx       Màn hình chính, bố cục, state, phím/chuột
+    ├── Header.tsx    Header phiên, model, thư mục, nhánh git
+    ├── StatusBar.tsx Footer trạng thái, token, thời gian
+    ├── Welcome.tsx   Màn hình chào phiên trống
+    ├── QueuePanel.tsx Bảng tin nhắn xếp hàng
+    ├── ApprovalPanel.tsx Hiển thị hộp duyệt
     ├── InputBox.tsx  Ô nhập nhiều dòng, con trỏ, history
-    ├── useKeys.ts    Parser phím thô (escape bị tách, chuột, paste)
+    ├── useKeys.ts    Parser phím thô, chuột, paste
     ├── markdown.ts   Markdown → segment → ANSI
-    ├── Transcript.tsx Item hội thoại → dòng hiển thị
+    ├── Transcript.tsx Item hội thoại → dòng, thẻ tool, diff
+    ├── approval.ts   Nội dung duyệt, cảnh báo lệnh nguy hiểm
+    ├── diff.ts       Diff dòng LCS
+    ├── format.ts     Token, thời gian, đường dẫn, spinner
+    ├── git.ts        Đọc nhánh git
+    ├── hitTest.ts    Tọa độ chuột → dòng transcript
+    ├── useTranscriptLines.ts Cache dòng + bản đồ click
     └── commands.ts   Gợi ý lệnh gạch chéo
 
 test/                 node:test, không framework
@@ -51,7 +62,7 @@ docs/                 Tài liệu chi tiết
   Không thêm phần tham chiếu như `(xem file X)` nếu không cần.
 - **Tên**: `camelCase` cho biến/hàm, `PascalCase` cho class/component,
   `SCREAMING_SNAKE_CASE` cho hằng.
-- **File > 300 dòng**: cân nhắc tách module. `App.tsx` hiện ~590 dòng.
+- **File > 300 dòng**: cân nhắc tách module. `App.tsx` hiện ~700 dòng.
 - **Không thêm dependency** khi stdlib hoặc dependency có sẵn làm được.
   Mọi dependency phải pin version chính xác, không dùng `^` hay `latest`.
 - **Không dead code**: xoá import, hàm, biến không dùng ngay khi phát hiện.
@@ -88,13 +99,17 @@ không được bỏ qua, nếu không lượt sau sẽ lỗi.
 
 Terminal có thể gửi escape sequence bị tách (`\x1b` rồi `[A`), Ink hiểu nhầm
 thành text → hiện literal `^[[A`. `useKeys.ts` buffer lại và chờ 60ms cho
-sequence dở dang. Cũng bật SGR mouse `\x1b[?1000h\x1b[?1006h` để nhận lăn chuột.
+sequence dở dang. Cũng bật SGR mouse `\x1b[?1000h\x1b[?1006h` để nhận lăn chuột
+và click trái; click chỉ có hiệu lực trên dòng tiêu đề thinking/tool, bị chặn
+khi đang duyệt tool, và `Shift+click` được giữ cho chọn văn bản.
 
 ### Render dùng ANSI string
 
 Ink hỗ trợ ANSI trong `<Text>`. Mỗi dòng transcript là **một** `<Text>` chứa
 chuỗi đã tô màu, không lồng nhiều `<Text>` cho từng style — giảm mạnh số node React.
-Cache dòng theo `item.id`, xoá cache khi đổi `columns` hoặc khi tool có kết quả mới.
+Cache dòng theo `item.id`, xoá cache khi đổi `columns`, khi tool có kết quả mới
+hoặc khi toggle thinking/tool. `useTranscriptLines.ts` dựng song song bản đồ
+`owners` để biết dòng nào thuộc item nào và có phải tiêu đề click được không.
 
 ### Proxy có thể không chuẩn
 
@@ -105,15 +120,17 @@ Cache dòng theo `item.id`, xoá cache khi đổi `columns` hoặc khi tool có 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 57 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 76 test:
 
 | File | Nội dung |
 |---|---|
-| `test/tools.test.ts` | Ghi/đọc/sửa file, bash, glob, grep, input reducer |
-| `test/keys.test.ts` | Parse phím, chuột, paste, markdown inline, bảng, khối code, tiêu đề, quote lồng, khung spinner |
+| `test/tools.test.ts` | Ghi/đọc/sửa file, bash, exitCode, glob, grep, input reducer |
+| `test/keys.test.ts` | Parse phím/chuột/click, paste, markdown inline, bảng, khối code, tiêu đề, quote lồng, khung spinner |
 | `test/instructions.test.ts` | Nạp PILL.md global/project/cha |
 | `test/agent.test.ts` | System prompt: thư mục làm việc, thư mục tạm, 6 tool, các mục chính |
 | `test/statusline.test.ts` | Dòng trạng thái: đọc settings.json, chạy lệnh, lấy dòng đầu stdout |
+| `test/diff.test.ts` | Diff dòng LCS, thêm/bớt, giới hạn, truncated |
+| `test/ui.test.ts` | Format, hit-test, nội dung duyệt, thẻ tool |
 
 Test không gọi mạng — dùng thư mục tạm qua `withTempDir()`.
 
@@ -127,10 +144,13 @@ TUI cần terminal thật, không test tự động được. Kiểm tra thủ c
 |---|---|
 | Gõ nhanh | Gõ liên tục 30+ ký tự, không được mất chữ |
 | History | Gửi tin, bấm `↑` — phải hiện lại tin cũ, **không** hiện `^[[A` |
-| Cuộn | `PageUp`/`PageDown`, lăn chuột |
-| Duyệt tool | Gửi "chạy lệnh", bấm `y` |
+| Cuộn | `PageUp`/`PageDown`, lăn chuột; footer báo số dòng đã cuộn |
+| Duyệt tool | Gửi "chạy lệnh", bấm `y`; thử `n`, `Esc`, `d` mở rộng |
+| Mở rộng | Click tiêu đề thinking/tool, `Ctrl+O`, `Ctrl+T` |
+| Kích thước | 80×24 và 120×40, resize qua lại không tràn footer |
 | Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → `⏳ 1 chờ` |
 | Thinking | Cần mock trả `reasoning_content` |
+| Diff | Cần mock trả `edit_file` |
 | Gợi ý lệnh | Gõ `/`, dùng `Tab`/`↑↓` |
 | Token | Footer hiện `↑N ↓N` sau mỗi lượt |
 

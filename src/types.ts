@@ -10,9 +10,15 @@ export type ChatMessage =
   | { role: 'assistant'; content: string | null; toolCalls?: ToolCall[] }
   | { role: 'tool'; toolCallId: string; content: string };
 
+export type ToolMeta = {
+  durationMs?: number;
+  exitCode?: number;
+};
+
 export type ToolResult = {
   content: string;
   isError?: boolean;
+  meta?: ToolMeta;
 };
 
 export type ToolSpec = {

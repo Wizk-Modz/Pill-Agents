@@ -1,14 +1,24 @@
-// Giao diện kiểu Claude Code: transcript markdown, prompt ❯, xếp hàng tin nhắn và thinking.
+// Giao diện kiểu Claude Code: header, transcript markdown, thẻ tool, xếp hàng và hộp duyệt.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useApp, useStdout } from 'ink';
+import { Box, Text, measureElement, useApp, useWindowSize, type DOMElement } from 'ink';
 import { Agent } from '../agent.js';
 import { EFFORT_LEVELS, parseEffort, type Config } from '../config.js';
 import type { ToolCall, ToolResult, Usage } from '../types.js';
 import { runStatusLine, type StatusLineInput } from '../statusline.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
 import { applySuggestion, suggestCommands } from './commands.js';
-import { itemToLines, summarizeToolCall, type ItemBody, type TranscriptItem } from './Transcript.js';
-import { makeKey, useKeys, type KeyEvent } from './useKeys.js';
+import { summarizeToolCall, type ItemBody, type TranscriptItem } from './Transcript.js';
+import { useKeys, type KeyEvent } from './useKeys.js';
+import { useTranscriptLines } from './useTranscriptLines.js';
+import { Header } from './Header.js';
+import { StatusBar } from './StatusBar.js';
+import { Welcome } from './Welcome.js';
+import { QueuePanel, queuePanelHeight } from './QueuePanel.js';
+import { ApprovalPanel } from './ApprovalPanel.js';
+import { buildApprovalLines } from './approval.js';
+import { readGitBranch } from './git.js';
+import { hitTestColumn, hitTestLine } from './hitTest.js';
+import { SPINNER_FRAMES } from './format.js';
 
 type PendingApproval = { call: ToolCall; resolve: (approved: boolean) => void };
 
@@ -16,58 +26,22 @@ const MAX_PROMPT_LINES = 8;
 const STREAM_FLUSH_MS = 60;
 const STATUS_DEBOUNCE_MS = 150;
 const SPINNER_INTERVAL_MS = 120;
-// Khung hình spinner braille, gồm cả U+283C (BRAILLE PATTERN DOTS-346).
-export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const APPROVAL_HEIGHT = 2;
 const WHEEL_LINES = 3;
-
-// Theo dõi kích thước terminal và cập nhật khi resize.
-function useTerminalSize(): { columns: number; rows: number } {
-  const { stdout } = useStdout();
-  const stream = stdout as NodeJS.WriteStream;
-  const [size, setSize] = useState({ columns: stream.columns || 80, rows: stream.rows || 24 });
-  useEffect(() => {
-    const update = (): void => setSize({ columns: stream.columns || 80, rows: stream.rows || 24 });
-    update();
-    stream.on('resize', update);
-    return () => {
-      stream.off('resize', update);
-    };
-  }, [stream]);
-  return size;
-}
-
-// Mô tả ngắn gọn tool đang chờ xác nhận, gộp về một dòng để không vỡ layout.
-function approvalDetail(call: ToolCall): string {
-  let detail = call.arguments;
-  try {
-    const args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
-    if (call.name === 'bash') detail = String(args.command ?? '');
-    else if (call.name === 'write_file') {
-      const size = typeof args.content === 'string' ? args.content.length : 0;
-      detail = `${String(args.path ?? '')} (${size} ký tự)`;
-    } else if (call.name === 'edit_file') detail = String(args.path ?? '');
-  } catch {
-    // Hiển thị thô nếu JSON hỏng.
-  }
-  return detail.replace(/\s+/g, ' ').trim();
-}
-
-// Rút gọn số token: 1234 thành 1.2k.
-export function formatTokens(value: number): string {
-  if (value < 1000) return String(value);
-  return `${(value / 1000).toFixed(1)}k`;
-}
+const HEADER_HEIGHT = 2;
+const FOOTER_HEIGHT = 1;
 
 // Màn hình chính của PillAgents.
 export function App({ agent, config, version }: { agent: Agent; config: Config; version: string }): React.ReactElement {
   const { exit } = useApp();
-  const { columns, rows } = useTerminalSize();
+  const size = useWindowSize();
+  const columns = Math.max(20, size.columns || 80);
+  const rows = Math.max(10, size.rows || 24);
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [streaming, setStreaming] = useState('');
   const [thinkingLive, setThinkingLive] = useState('');
   const [busy, setBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [approvalExpanded, setApprovalExpanded] = useState(false);
   const [scrollTop, setScrollTop] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
@@ -76,6 +50,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const [input, setInput] = useState<InputState>({ value: '', cursor: 0, historyIndex: -1 });
   const [statusText, setStatusText] = useState<string | undefined>(undefined);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [gitBranch] = useState(() => readGitBranch(config.cwd));
 
   const idRef = useRef(0);
   const textRef = useRef('');
@@ -83,6 +59,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const thinkingStartRef = useRef<number | null>(null);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const transcriptRef = useRef<DOMElement | null>(null);
   // Bản sao state cho handler bất đồng bộ: cập nhật ngay tại chỗ ghi state, không qua
   // useEffect, để tránh ghi đè bằng giá trị cũ khi có nhiều cập nhật trong cùng một frame.
   const pendingRef = useRef<PendingApproval | null>(null);
@@ -90,10 +67,9 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const inputRef = useRef(input);
   const scrollRef = useRef<number | null>(null);
   const queueRef = useRef<string[]>([]);
-  const runTurnRef = useRef<((text: string) => Promise<void>) | null>(null);
   const submitRef = useRef<((text: string) => void) | null>(null);
-  const lineCacheRef = useRef(new Map<string, string[]>());
-  const cacheWidthRef = useRef(columns);
+
+  const { lines, owners, invalidate } = useTranscriptLines({ items, streaming, thinkingLive, columns });
 
   // Đưa con trỏ về gợi ý đầu tiên mỗi khi nội dung prompt thay đổi.
   useEffect(() => {
@@ -173,12 +149,13 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     if (pendingRef.current) {
       pendingRef.current.resolve(false);
       setPendingSync(null);
+      setApprovalExpanded(false);
     }
     queueRef.current = [];
     setQueue([]);
     commitThinking();
     commitStreaming();
-  }, [commitThinking, commitStreaming]);
+  }, [commitThinking, commitStreaming, setPendingSync]);
 
   // Chạy một lượt với agent và xử lý hàng đợi sau khi xong.
   const runTurn = useCallback(
@@ -193,6 +170,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       setStreaming('');
       setThinkingLive('');
       setBusySync(true);
+      setTurnStartedAt(Date.now());
       setScrollSync(null);
 
       const handlers = {
@@ -228,7 +206,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
             current.map((item) => {
               if (item.kind === 'tool' && item.call.id === call.id && !item.result) {
                 // Xoá cache để dòng tool được render lại với kết quả mới.
-                lineCacheRef.current.delete(String(item.id));
+                invalidate(item.id);
                 return { ...item, result };
               }
               return item;
@@ -248,6 +226,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         },
         approve: (call: ToolCall) =>
           new Promise<boolean>((resolve) => {
+            setApprovalExpanded(false);
             setPendingSync({ call, resolve });
           }),
       };
@@ -261,8 +240,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         commitThinking();
         commitStreaming();
         setPendingSync(null);
+        setApprovalExpanded(false);
         controllerRef.current = null;
         setBusySync(false);
+        setTurnStartedAt(null);
 
         const next = queueRef.current.shift();
         if (next) {
@@ -272,9 +253,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         }
       }
     },
-    [agent, commitStreaming, commitThinking, flushNow, pushItem, scheduleFlush],
+    [agent, commitStreaming, commitThinking, flushNow, invalidate, pushItem, scheduleFlush, setBusySync, setPendingSync, setScrollSync],
   );
-  runTurnRef.current = runTurn;
 
   // Xử lý lệnh gạch chéo; trả true nếu đã xử lý.
   const runCommand = useCallback(
@@ -288,6 +268,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/clear') {
         agent.reset();
         setItems([]);
+        invalidate();
         setTokenUsage({ prompt: 0, completion: 0, last: 0 });
         setScrollSync(null);
         pushItem({ kind: 'info', text: 'Đã xoá hội thoại.' });
@@ -324,14 +305,14 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+D thoát • /clear /model /effort /help /exit',
+          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • Ctrl+D thoát • /clear /model /effort /help /exit',
         });
         return true;
       }
       pushItem({ kind: 'error', text: `Lệnh không hỗ trợ: ${command}` });
       return true;
     },
-    [agent, config, exit, pushItem],
+    [agent, config, exit, invalidate, pushItem, setScrollSync],
   );
 
   // Gửi tin nhắn: chạy ngay nếu rảnh, xếp hàng nếu đang bận.
@@ -353,36 +334,67 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   );
   submitRef.current = submit;
 
-  // Toàn bộ transcript thành các dòng ANSI, cache từng mục để tránh render lại.
-  const lines = useMemo<string[]>(() => {
-    const cache = lineCacheRef.current;
-    // Bề rộng đổi thì dòng đã cache sai wrap: phải xoá ngay trong lúc tính, vì effect
-    // chạy sau khi memo đã đọc cache cũ và không kích hoạt render lại.
-    if (cacheWidthRef.current !== columns) {
-      cache.clear();
-      cacheWidthRef.current = columns;
-    }
-    const output: string[] = [];
-    for (const item of items) {
-      const key = String(item.id);
-      let cached = cache.get(key);
-      if (!cached) {
-        cached = itemToLines(item, columns);
-        cache.set(key, cached);
-      }
-      output.push(...cached);
-    }
-    if (thinkingLive) output.push(...itemToLines({ id: -2, kind: 'thinking', text: thinkingLive }, columns));
-    if (streaming) {
-      const body = itemToLines({ id: -1, kind: 'assistant', text: streaming }, columns);
-      output.push(...body.slice(0, -1));
-      output.push('  ▌');
-    }
-    return output;
-  }, [items, streaming, thinkingLive, columns]);
+  // Mở/đóng toàn bộ khối thinking, xoá cache để render lại.
+  const toggleThinking = useCallback(() => {
+    invalidate();
+    setItems((current) => {
+      const thinking = current.filter((item) => item.kind === 'thinking');
+      if (!thinking.length) return current;
+      const expand = thinking.some((item) => item.kind === 'thinking' && item.expanded === false);
+      return current.map((item) =>
+        item.kind === 'thinking' ? { ...item, expanded: expand } : item,
+      );
+    });
+  }, [invalidate]);
+
+  // Mở/đóng riêng một khối thinking theo id.
+  const toggleThinkingItem = useCallback(
+    (id: number) => {
+      invalidate(id);
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === 'thinking' && item.id === id
+            ? { ...item, expanded: item.expanded !== true }
+            : item,
+        ),
+      );
+    },
+    [invalidate],
+  );
+
+  // Mở/đóng toàn bộ kết quả tool.
+  const toggleTools = useCallback(() => {
+    invalidate();
+    setItems((current) => {
+      const tools = current.filter((item) => item.kind === 'tool');
+      if (!tools.length) return current;
+      const expand = tools.some((item) => item.kind === 'tool' && item.expanded !== true);
+      return current.map((item) => (item.kind === 'tool' ? { ...item, expanded: expand } : item));
+    });
+  }, [invalidate]);
+
+  // Mở/đóng riêng kết quả của một tool theo id.
+  const toggleToolItem = useCallback(
+    (id: number) => {
+      invalidate(id);
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === 'tool' && item.id === id
+            ? { ...item, expanded: item.expanded !== true }
+            : item,
+        ),
+      );
+    },
+    [invalidate],
+  );
 
   const suggestions = useMemo(() => suggestCommands(input.value), [input.value]);
   const activeSuggestion = suggestions.length ? suggestions[Math.min(suggestionIndex, suggestions.length - 1)] : null;
+  const toolCount = useMemo(
+    () => items.reduce((count, item) => (item.kind === 'tool' ? count + 1 : count), 0),
+    [items],
+  );
+
   // Dòng trạng thái mặc định, dùng khi người dùng chưa cấu hình statusLine.
   const builtinStatus = `${version} · ${config.model}${config.effort ? ` · ${config.effort}` : ''}`;
 
@@ -437,13 +449,29 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
   const inputLines = countInputLines(input.value, input.cursor, columns, MAX_PROMPT_LINES);
   const suggestionHeight = suggestions.length ? suggestions.length + 1 : 0;
-  // Chiều cao chrome: ô nhập (đã gồm 2 đường kẻ), footer 1 dòng, bảng gợi ý và hộp duyệt tool.
-  const chromeHeight = inputLines + 1 + suggestionHeight + (pendingApproval ? APPROVAL_HEIGHT : 0);
+  const queueHeight = queuePanelHeight(queue);
+  const baseChromeHeight = HEADER_HEIGHT + queueHeight + suggestionHeight + inputLines + FOOTER_HEIGHT;
+  const approvalBudget = Math.max(4, rows - 3 - baseChromeHeight);
+  const approvalMaxPreview = Math.max(1, Math.min(approvalExpanded ? 24 : 8, approvalBudget - 4));
+  const approvalLines = useMemo(
+    () =>
+      pendingApproval
+        ? buildApprovalLines(pendingApproval.call, {
+            width: Math.max(20, columns - 2),
+            expanded: approvalExpanded,
+            cwd: config.cwd,
+            maxPreview: approvalMaxPreview,
+          })
+        : [],
+    [pendingApproval, approvalExpanded, columns, config.cwd, approvalMaxPreview],
+  );
+  const chromeHeight = baseChromeHeight + approvalLines.length;
   const viewportHeight = Math.max(3, rows - chromeHeight);
   const maxTop = Math.max(0, lines.length - viewportHeight);
   const top = scrollTop === null ? maxTop : Math.min(Math.max(0, scrollTop), maxTop);
   const visible = lines.slice(top, top + viewportHeight);
-  const scrolled = maxTop > 0 && top < maxTop;
+  const scrolledLines = maxTop > 0 ? maxTop - top : 0;
+  const showWelcome = items.length === 0 && !streaming && !thinkingLive;
 
   // Cuộn transcript theo số dòng, chỉ khi nội dung tràn màn hình.
   const scrollBy = useCallback(
@@ -453,38 +481,51 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       const next = Math.max(0, Math.min(maxTop, current + delta));
       setScrollSync(next >= maxTop ? null : next);
     },
-    [maxTop],
+    [maxTop, setScrollSync],
   );
 
-  // Mở/đóng toàn bộ khối thinking, xoá cache để render lại.
-  const toggleThinking = useCallback(() => {
-    setItems((current) => {
-      const thinking = current.filter((item) => item.kind === 'thinking');
-      if (!thinking.length) return current;
-      const expand = thinking.some((item) => item.kind === 'thinking' && item.expanded === false);
-      for (const item of thinking) lineCacheRef.current.delete(String(item.id));
-      return current.map((item) =>
-        item.kind === 'thinking' ? { ...item, expanded: expand } : item,
-      );
-    });
-  }, []);
+  // Click vào dòng tiêu đề thinking/tool để mở/đóng đúng mục đó.
+  const handleClick = useCallback(
+    (row: number, column: number) => {
+      if (pendingRef.current) return;
+      const node = transcriptRef.current;
+      if (!node) return;
+      const metrics = measureElement(node);
+      if (metrics.width <= 0 || !hitTestColumn(column, metrics.x, metrics.width)) return;
+      const owner = hitTestLine(owners, { top, transcriptTop: metrics.y, row, height: metrics.height });
+      if (!owner?.header) return;
+      if (owner.kind === 'thinking') toggleThinkingItem(owner.id);
+      else if (owner.kind === 'tool') toggleToolItem(owner.id);
+    },
+    [owners, top, toggleThinkingItem, toggleToolItem],
+  );
 
-  // Xử lý sự kiện phím đã chuẩn hoá.
+  // Xử lý sự kiện phím và chuột đã chuẩn hoá.
   const handleKey = useCallback(
     (event: KeyEvent) => {
       if (event.type === 'wheel') {
         scrollBy(event.direction === 'up' ? -WHEEL_LINES : WHEEL_LINES);
         return;
       }
+      if (event.type === 'click') {
+        handleClick(event.row, event.column);
+        return;
+      }
 
-      // Khi chờ duyệt: y/n/Esc trả lời, mọi phím khác bị chặn để tránh gõ nhầm.
+      // Khi chờ duyệt: y/n/Esc trả lời, d mở rộng, mọi phím khác bị chặn để tránh gõ nhầm.
       if (pendingRef.current) {
         const text = event.type === 'key' ? event.char : event.type === 'text' ? event.text : '';
         const answer = text.toLowerCase();
         const escape = event.type === 'key' && event.key.escape;
+        const plain = event.type === 'text' || (event.type === 'key' && !event.key.ctrl && !event.key.meta);
+        if (plain && answer === 'd') {
+          setApprovalExpanded((current) => !current);
+          return;
+        }
         if (answer === 'y' || answer === 'n' || escape) {
           const entry = pendingRef.current;
-              setPendingSync(null);
+          setPendingSync(null);
+          setApprovalExpanded(false);
           entry.resolve(answer === 'y');
         }
         return;
@@ -501,6 +542,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
       if (key.ctrl && char === 'o') {
         toggleThinking();
+        return;
+      }
+      if (key.ctrl && char === 't') {
+        toggleTools();
         return;
       }
 
@@ -563,38 +608,54 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         applyInput(result.state);
       }
     },
-    [abort, applyInput, exit, history, scrollBy, submit, suggestions, suggestionIndex, toggleThinking, viewportHeight],
+    [
+      abort,
+      applyInput,
+      exit,
+      handleClick,
+      history,
+      scrollBy,
+      submit,
+      suggestions,
+      suggestionIndex,
+      toggleThinking,
+      toggleTools,
+      viewportHeight,
+    ],
   );
 
   useKeys(handleKey);
 
+  const elapsedMs = turnStartedAt === null ? 0 : Date.now() - turnStartedAt;
+
   return (
     <Box flexDirection="column" height={rows} width={columns}>
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
-        {visible.map((line, index) => (
-          <Text key={index} wrap="truncate-end">
-            {line || ' '}
-          </Text>
-        ))}
+      <Header
+        version={version}
+        model={config.model}
+        effort={config.effort}
+        cwd={config.cwd}
+        branch={gitBranch}
+        columns={columns}
+      />
+
+      <Box ref={transcriptRef} flexDirection="column" height={viewportHeight} flexShrink={0} overflow="hidden">
+        {showWelcome ? (
+          <Welcome version={version} />
+        ) : (
+          visible.map((line, index) => (
+            <Text key={index} wrap="truncate-end">
+              {line || ' '}
+            </Text>
+          ))
+        )}
       </Box>
 
-      {pendingApproval ? (
-        <Box flexDirection="column" paddingX={1}>
-          <Text wrap="truncate-end">
-            <Text color="yellow" bold>
-              ⏵ Cho phép chạy{' '}
-            </Text>
-            <Text bold>{pendingApproval.call.name}</Text>
-            <Text dimColor> — {approvalDetail(pendingApproval.call).slice(0, columns - 30)}</Text>
-          </Text>
-          <Text dimColor>
-            <Text color="green">[y]</Text> đồng ý · <Text color="red">[n/Esc]</Text> từ chối
-          </Text>
-        </Box>
-      ) : null}
+      {queue.length ? <QueuePanel queue={queue} /> : null}
+      {pendingApproval ? <ApprovalPanel lines={approvalLines} /> : null}
 
       {suggestions.length ? (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingX={1} flexShrink={0}>
           {suggestions.map((command, index) => {
             const active = command === activeSuggestion;
             return (
@@ -620,30 +681,20 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         maxLines={MAX_PROMPT_LINES}
       />
 
-      <Box justifyContent="space-between">
-        <Text dimColor wrap="truncate-end">
-          {statusText ?? builtinStatus}
-          {!statusText && tokenUsage.last > 0 ? (
-            <Text>
-              {' · '}
-              <Text color="magenta">↑{formatTokens(tokenUsage.prompt)}</Text>
-              <Text dimColor> </Text>
-              <Text color="cyan">↓{formatTokens(tokenUsage.completion)}</Text>
-            </Text>
-          ) : null}
-          {busy ? (
-            <Text color="yellow"> · {SPINNER_FRAMES[spinnerFrame] ?? '⠼'} đang xử lý (Esc huỷ)</Text>
-          ) : null}
-          {queue.length > 0 ? <Text color="cyan"> · ⏳ {queue.length} chờ</Text> : null}
-        </Text>
-        <Text dimColor wrap="truncate-end">
-          {scrolled
-            ? `↑ đã cuộn ${maxTop - top} dòng · PageDown về cuối`
-            : busy
-              ? 'Esc huỷ'
-              : 'Enter gửi · \\ + Enter xuống dòng · /help'}
-        </Text>
-      </Box>
+      <StatusBar
+        version={version}
+        model={config.model}
+        effort={config.effort}
+        tokens={tokenUsage}
+        toolCount={toolCount}
+        elapsedMs={busy ? elapsedMs : 0}
+        busy={busy}
+        queueCount={queue.length}
+        statusText={statusText}
+        spinnerFrame={spinnerFrame}
+        scrolledLines={scrolledLines}
+        columns={columns}
+      />
     </Box>
   );
 }

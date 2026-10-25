@@ -21,17 +21,55 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 | `src/main.tsx` | Điểm vào: nạp config, tạo agent, mở TUI | 144 |
 | `src/config.ts` | Đọc `settings.json` và biến môi trường | 101 |
 | `src/instructions.ts` | Nạp `PILL.md` global + project | 64 |
-| `src/types.ts` | Kiểu dữ liệu dùng chung | 30 |
+| `src/types.ts` | Kiểu dữ liệu dùng chung, metadata UI của tool | 36 |
 | `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 153 |
-| `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 259 |
-| `src/agent.ts` | Vòng lặp agent, quản lý hội thoại, lưu phiên | 243 |
+| `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 263 |
+| `src/agent.ts` | Vòng lặp agent, quản lý hội thoại, lưu phiên, đo thời gian tool | 246 |
 | `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 70 |
-| `src/ui/App.tsx` | Màn hình chính, xử lý phím, xếp hàng tin nhắn | 649 |
+| `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn | 700 |
 | `src/ui/InputBox.tsx` | Ô nhập nhiều dòng, logic con trỏ, history | 264 |
-| `src/ui/useKeys.ts` | Parse phím thô từ stdin | 246 |
+| `src/ui/useKeys.ts` | Parse phím thô, chuột và paste từ stdin | 257 |
 | `src/ui/markdown.ts` | Render markdown thành chuỗi ANSI | 408 |
-| `src/ui/Transcript.tsx` | Chuyển item hội thoại thành dòng hiển thị | 129 |
+| `src/ui/Transcript.tsx` | Item hội thoại thành dòng, thẻ tool và diff | 202 |
+| `src/ui/Header.tsx` | Header phiên bản, model, thư mục, nhánh git | 43 |
+| `src/ui/StatusBar.tsx` | Footer trạng thái, token, thời gian, gợi ý phím | 117 |
+| `src/ui/Welcome.tsx` | Màn hình chào khi phiên trống | 24 |
+| `src/ui/QueuePanel.tsx` | Bảng tin nhắn đang xếp hàng | 32 |
+| `src/ui/ApprovalPanel.tsx` | Hiển thị hộp duyệt tool | 16 |
+| `src/ui/approval.ts` | Dựng nội dung duyệt: lệnh, diff, cảnh báo | 179 |
+| `src/ui/diff.ts` | Diff dòng LCS, giới hạn số dòng | 77 |
+| `src/ui/format.ts` | Định dạng token, thời gian, đường dẫn, spinner | 43 |
+| `src/ui/git.ts` | Đọc nhánh git cho header | 16 |
+| `src/ui/hitTest.ts` | Đổi tọa độ chuột thành dòng/mục transcript | 25 |
+| `src/ui/useTranscriptLines.ts` | Cache dòng ANSI và bản đồ chủ sở hữu dòng | 67 |
 | `src/ui/commands.ts` | Gợi ý lệnh gạch chéo khi gõ `/` | 27 |
+
+## Bố cục TUI
+
+Giao diện một cột, thứ tự từ trên xuống: `Header`, transcript co giãn, `QueuePanel`, `ApprovalPanel`, gợi ý lệnh, `InputBox`, `StatusBar`.
+
+Chiều cao transcript được tính từ kích thước terminal trừ phần chrome cố định:
+
+```ts
+const baseChromeHeight = HEADER_HEIGHT + queueHeight + suggestionHeight + inputLines + FOOTER_HEIGHT;
+const approvalBudget = Math.max(4, rows - 3 - baseChromeHeight);
+const approvalMaxPreview = Math.max(1, Math.min(approvalExpanded ? 24 : 8, approvalBudget - 4));
+const viewportHeight = Math.max(3, rows - chromeHeight);
+```
+
+Nhờ vậy hộp duyệt co phần xem trước theo số dòng còn trống, còn transcript luôn giữ ít nhất 3 dòng và không đẩy footer khỏi màn hình. Header và footer đều một dòng; nội dung dài bị cắt bằng `fitText()` hoặc `wrap="truncate-end"`.
+
+`Header` đọc nhánh git một lần lúc khởi động (`readGitBranch()`), lỗi hoặc detached HEAD thì bỏ qua. `Welcome` chỉ hiện khi chưa có item, không streaming và không có thinking trực tiếp. Thẻ tool hiển thị header một dòng (trạng thái, tên, tóm tắt, thống kê) và phần thân thu gọn/mở rộng; `edit_file` thay phần thân bằng diff.
+
+## Metadata tool
+
+`ToolResult.meta` chỉ dùng cho giao diện, không đi vào nội dung gửi model:
+
+- `agent.ts` đo `durationMs` quanh lúc chạy tool, kể cả khi tool lỗi.
+- `tools.ts` gắn `exitCode` của `bash` khi lấy được mã số.
+- `Transcript.tsx` dùng metadata để hiện thời gian, `exit N`, số dòng/kết quả và diff.
+
+Việc đo nằm trong `agent.ts`, không sửa timeout, output hay nội dung tool gửi model.
 
 ## Luồng một lượt
 
@@ -114,14 +152,16 @@ Nếu proxy không trả `usage` (một số proxy cũ), `usage` là `undefined`
 
 Footer có hai chế độ, chọn theo `statusLine` trong `settings.json`:
 
-- Chưa cấu hình: App tự dựng dòng `pill 0.1.0 · model · effort` kèm token.
-- Đã cấu hình: `runStatusLine()` chạy lệnh của người dùng và lấy dòng đầu của stdout.
+- Chưa cấu hình: App tự dựng `pill 0.1.0 · model · effort`, kèm token (`↑N ↓N`), số tool, thời gian lượt đang chạy. Dưới 100 cột, phần model/effort được lược bớt vì header đã hiển thị chúng.
+- Đã cấu hình: `runStatusLine()` chạy lệnh của người dùng và lấy dòng đầu của stdout; phần token/số tool/thời gian tự dựng được thay bằng dòng này.
 
-`statusSignature` là chuỗi gộp các giá trị ảnh hưởng tới dòng trạng thái (lệnh, model, effort, token, đang bận, số tin chờ). Effect chạy lại khi chuỗi này đổi, gộp các lần đổi liền nhau bằng debounce 150ms; cách này tránh phải đưa cả object vào danh sách phụ thuộc, và `/model` hay `/effort` cũng kích hoạt làm mới vì chúng nằm trong chuỗi.
+`statusSignature` là chuỗi gộp các giá trị ảnh hưởng tới dòng trạng thái (lệnh, model, effort, token, đang bận, số tin chờ). Effect chạy lại khi chuỗi này đổi, gộp các lần đổi liền nhau bằng debounce 150ms; cách này tránh phải đưa cả object vào danh sách phụ thuộc, và `/model` hay `/effort` cũng kích hoạt làm mới vì chúng nằm trong chuỗi. Số tool và thời gian không nằm trong chữ ký vì thay đổi liên tục mà không cần chạy lại statusLine.
 
 Lệnh nhận JSON của phiên qua stdin (`StatusLineInput`) nên script tự quyết định hiển thị gì. `runStatusLine()` chạy lệnh qua shell của nền tảng, trong thư mục dự án, kèm `childEnv()` giống tool `bash`. Lệnh lỗi, không in gì hoặc quá 5 giây đều trả `undefined` → App quay về dòng mặc định, không có thông báo lỗi nào hiện ra.
 
 Phần spinner `đang xử lý (Esc huỷ)` và `⏳ n chờ` luôn được nối sau dòng trạng thái vì đây là thông tin người dùng cần thấy ngay. Spinner dùng bộ khung braille (`SPINNER_FRAMES`, đổi khung mỗi 120ms) để thấy rõ máy vẫn đang chạy. Khung hình spinner **không** nằm trong `statusSignature`, nên lệnh statusLine không bị chạy lại theo nhịp quay.
+
+Bên phải footer là gợi ý theo ngữ cảnh: `Enter gửi · /help` khi rảnh, `Esc huỷ` khi đang chạy, `↑ đã cuộn N dòng · PageDown về cuối` khi transcript không ở cuối. Gợi ý này chỉ hiện khi terminal đủ rộng và tổng độ dài hai bên vừa một dòng; nếu không, footer dành toàn bộ chỗ cho trạng thái và cắt bằng `truncate-end`. Độ dài được đo sau khi bỏ mã ANSI để statusLine tô màu không làm lệch layout.
 
 Chuỗi ANSI trong stdout được giữ nguyên: `<Text>` của Ink render mã màu, nên script tự tô màu được.
 
@@ -137,8 +177,20 @@ Ink có sẵn `useInput` nhưng có 2 vấn đề:
 - Buffer dữ liệu vào, tìm escape sequence khớp; nếu chuỗi là **tiền tố** của sequence hợp lệ (ví dụ mới có `\x1b`) thì chờ thêm, hết 60ms mới kết luận
 - Bật SGR mouse `\x1b[?1000h\x1b[?1006h` và alternate scroll `\x1b[?1007h` khi mount, tắt khi unmount
 - Nhận bracketed paste `\x1b[200~...\x1b[201~`
+- Giải mã SGR mouse: `code & 3` là nút, `code & 64` là bánh xe, `code & 32` là kéo, `code & 4` là Shift
 
-Phát ra 4 loại sự kiện: `key`, `text`, `paste`, `wheel`.
+Phát ra 5 loại sự kiện: `key`, `text`, `paste`, `wheel`, `click`.
+
+### Click trong transcript
+
+Ink 8 chưa có API mouse, nên click được xử lý thủ công:
+
+1. `useTranscriptLines()` dựng thêm mảng `owners`, mỗi dòng ANSI biết thuộc item nào và có phải dòng tiêu đề không.
+2. App đo vùng transcript bằng `measureElement(transcriptRef)` để lấy tọa độ gốc.
+3. `hitTestLine()` đổi `row` 1-based của terminal thành chỉ số dòng tuyệt đối (`top + row - 1 - transcriptTop`); `hitTestColumn()` giới hạn click trong bề rộng transcript.
+4. Chỉ dòng tiêu đề của `thinking` hoặc `tool` được xử lý; click vào thân hoặc item khác bị bỏ qua. Khi hộp duyệt đang mở, mọi click bị chặn; `Shift+click` được parser bỏ qua để giữ chọn văn bản.
+
+Dùng bản đồ chủ sở hữu theo dòng thay vì đo từng item giúp chi phí hit-test không tăng theo số item.
 
 ## Render markdown
 
@@ -163,14 +215,33 @@ Bảng dùng ký tự `┌┬┐ ├┼┤ └┴┘`, căn lề theo dấu `:` 
 
 ## Cache dòng
 
-Transcript dài → render lại toàn bộ sẽ chậm. Mỗi item được render một lần và cache theo `id`:
+Transcript dài → render lại toàn bộ sẽ chậm. `useTranscriptLines()` render mỗi item một lần và cache theo `id`:
 
 ```ts
-const cached = cache.get(String(item.id));
-if (!cached) { cache.set(key, itemToLines(item, columns)); }
+let rendered = cache.get(item.id);
+if (!rendered) {
+  rendered = itemToLines(item, columns);
+  cache.set(item.id, rendered);
+}
 ```
 
-Cache bị xoá khi: đổi độ rộng terminal (kiểm tra ngay trong `useMemo`, vì `useEffect` chạy sau khi memo đã đọc cache cũ), tool có kết quả mới, toggle thinking.
+Cùng lúc, hook dựng `owners` song song với mảng dòng để phục vụ click:
+
+```ts
+lineOwners.push({ id: item.id, kind: item.kind, header: clickable && index === 0 });
+```
+
+Cache bị xoá khi: đổi độ rộng terminal (kiểm tra ngay trong `useMemo`, vì `useEffect` chạy sau khi memo đã đọc cache cũ), tool có kết quả mới, toggle thinking/tool. Streaming và thinking trực tiếp không cache vì nội dung đổi liên tục.
+
+## Diff
+
+`src/ui/diff.ts` là diff dòng LCS thuần, không dependency:
+
+- So khớp dòng để đánh dấu `context`, `add`, `remove`
+- Giới hạn số dòng (mặc định 400) và đặt cờ `truncated`
+- Dùng cho thẻ `edit_file` và hộp duyệt tool
+
+Diff chỉ để hiển thị. Nội dung tool gửi model vẫn là kết quả gốc của `edit_file`, không bị cắt theo diff.
 
 ## Cấu hình
 

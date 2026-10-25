@@ -59,6 +59,16 @@ test('bash trả về lỗi thay vì ném khi lệnh fail', async () => {
     const result = await bash.run({ command: 'echo lỗi >&2; exit 3' }, new AbortController().signal);
     assert.equal(result.isError, true);
     assert.match(result.content, /lỗi/);
+    assert.equal(result.meta?.exitCode, 3);
+  });
+});
+
+test('bash gắn exitCode 0 khi lệnh thành công', async () => {
+  await withTempDir(async (dir) => {
+    const bash = tool(dir, 'bash');
+    const result = await bash.run({ command: 'echo ok' }, new AbortController().signal);
+    assert.equal(result.isError, undefined);
+    assert.equal(result.meta?.exitCode, 0);
   });
 });
 
@@ -152,7 +162,7 @@ test('reduceInput di chuyển lịch sử và sửa ký tự', () => {
 });
 
 test('formatTokens rút gọn số lớn', async () => {
-  const { formatTokens } = await import('../src/ui/App.js');
+  const { formatTokens } = await import('../src/ui/format.js');
   assert.equal(formatTokens(42), '42');
   assert.equal(formatTokens(999), '999');
   assert.equal(formatTokens(1000), '1.0k');
