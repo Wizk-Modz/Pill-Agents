@@ -191,6 +191,7 @@ export class Agent {
       }
 
       let result: ToolResult;
+      const startedAt = Date.now();
       try {
         result = await tool.run(args, signal);
       } catch (error) {
@@ -200,6 +201,8 @@ export class Agent {
         }
         result = { content: error instanceof Error ? error.message : String(error), isError: true };
       }
+      // Thời gian chỉ dùng cho giao diện, không đưa vào nội dung gửi model.
+      result = { ...result, meta: { ...result.meta, durationMs: Date.now() - startedAt } };
       // Lượt có thể bị huỷ trong lúc tool đang chạy; vẫn ghi kết quả để hội thoại hợp lệ.
       this.pushToolResult(call, result, handlers);
       if (signal.aborted) {

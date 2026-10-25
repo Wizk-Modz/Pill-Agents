@@ -43,6 +43,35 @@ test('parseInput nhận diện lăn chuột SGR', () => {
   assert.ok(up.type === 'wheel' && up.direction === 'up');
   const down = firstKey('\x1b[<65;10;5M');
   assert.ok(down.type === 'wheel' && down.direction === 'down');
+  const shifted = firstKey('\x1b[<68;10;5M');
+  assert.ok(shifted.type === 'wheel' && shifted.direction === 'up', 'giữ modifier không làm mất lăn chuột');
+});
+
+test('parseInput nhận diện click chuột trái và bỏ qua release, kéo, shift+click', () => {
+  const click = firstKey('\x1b[<0;12;5M');
+  assert.equal(click.type, 'click');
+  assert.ok(click.type === 'click' && click.column === 12 && click.row === 5);
+
+  const release = parseInput('\x1b[<0;12;5m', false);
+  assert.equal(release.events.length, 0, 'release không phải click');
+
+  const drag = parseInput('\x1b[<32;12;5M', false);
+  assert.equal(drag.events.length, 0, 'kéo chuột không phải click');
+
+  const shiftClick = parseInput('\x1b[<4;12;5M', false);
+  assert.equal(shiftClick.events.length, 0, 'shift+click dành cho chọn văn bản');
+
+  const rightClick = parseInput('\x1b[<2;12;5M', false);
+  assert.equal(rightClick.events.length, 0, 'chỉ nhận chuột trái');
+});
+
+test('parseInput chờ đủ chuỗi click bị tách', () => {
+  const first = parseInput('\x1b[<0;12', false);
+  assert.equal(first.events.length, 0);
+  assert.equal(first.rest, '\x1b[<0;12');
+  const second = parseInput(`${first.rest};5M`, false);
+  assert.equal(second.events.length, 1);
+  assert.ok(second.events[0]!.type === 'click');
 });
 
 test('parseInput nhận diện bracketed paste và giữ nguyên newline', () => {
@@ -170,11 +199,11 @@ test('renderMarkdown: không nhầm dòng có | thường thành bảng', () => 
 });
 
 test('spinner dùng toàn khung hình braille và có U+283C', async () => {
-  const { SPINNER_FRAMES } = await import('../src/ui/App.js');
+  const { SPINNER_FRAMES } = await import('../src/ui/format.js');
   assert.ok(SPINNER_FRAMES.includes('\u283c'), 'thiếu U+283C');
-  const codes = SPINNER_FRAMES.map((frame) => frame.codePointAt(0) ?? 0);
+  const codes = SPINNER_FRAMES.map((frame: string) => frame.codePointAt(0) ?? 0);
   assert.ok(
-    codes.every((code) => code >= 0x2800 && code <= 0x28ff),
+    codes.every((code: number) => code >= 0x2800 && code <= 0x28ff),
     'có khung hình nằm ngoài dải braille',
   );
 });

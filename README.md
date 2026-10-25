@@ -49,6 +49,16 @@ Prompt nền dựng sẵn gồm 5 mục — môi trường, cách làm việc, t
 
 Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 
+## Giao diện
+
+Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 80×24):
+
+- **Header**: phiên bản, model, effort, thư mục và nhánh git; thu gọn khi hẹp.
+- **Welcome**: hiện khi phiên chưa có tin nhắn, kèm gợi ý lệnh.
+- **Transcript**: markdown, thinking, thẻ tool và diff; chỉ vùng này cuộn.
+- **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập, tối đa 3 tin xếp hàng hiển thị.
+- **Footer**: trạng thái phiên, token, số tool, thời gian và gợi ý phím theo ngữ cảnh.
+
 ## Phím tắt
 
 | Phím | Tác dụng |
@@ -62,15 +72,20 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 | `Ctrl+P` / `Ctrl+N` | Lịch sử lệnh |
 | `Ctrl+A` / `Ctrl+E` | Về đầu / cuối dòng |
 | `Ctrl+U` / `Ctrl+K` | Xoá từ đầu / đến cuối dòng |
-| `Ctrl+O` | Mở/đóng khối thinking đã thu gọn |
+| `Ctrl+O` | Mở/đóng toàn bộ khối thinking |
+| `Ctrl+T` | Mở/đóng toàn bộ kết quả tool |
+| Click tiêu đề Thinking/tool | Mở/đóng riêng mục đó |
+| `d` (khi chờ duyệt) | Xem đầy đủ / thu gọn nội dung duyệt |
+| `y` / `n` (khi chờ duyệt) | Đồng ý / từ chối tool |
 | `Esc` | Huỷ lượt đang chạy |
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
 
-Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, tự động chạy sau khi lượt hiện tại xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model.
-Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking**.
+Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
 
-Footer hiển thị token đã dùng trong phiên: `↑` là prompt, `↓` là completion. `/clear` đặt lại về 0. Khi agent đang chạy, footer hiện spinner braille kèm dòng `đang xử lý (Esc huỷ)`.
+Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `edit_file`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
+
+Footer hiển thị phiên bản, token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; khi terminal đủ rộng (≥ 100 cột) footer hiện thêm model/effort, còn header luôn có các thông tin này. `/clear` đặt lại token về 0. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
 
 Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), cấu hình `statusLine` trong `settings.json` — PillAgents chạy lệnh của bạn và lấy dòng đầu stdout:
 

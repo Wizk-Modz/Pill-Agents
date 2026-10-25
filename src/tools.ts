@@ -90,13 +90,17 @@ async function bashTool(cwd: string, args: Record<string, unknown>, signal: Abor
       signal,
       env: childEnv(),
     });
-    return { content: clip([stdout, stderr].filter(Boolean).join('\n') || '(không có output)') };
+    return {
+      content: clip([stdout, stderr].filter(Boolean).join('\n') || '(không có output)'),
+      meta: { exitCode: 0 },
+    };
   } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; message: string; killed?: boolean };
+    const err = error as { stdout?: string; stderr?: string; message: string; code?: number | string };
     const output = [err.stdout, err.stderr].filter(Boolean).join('\n');
     return {
       content: clip(output || err.message),
       isError: true,
+      meta: typeof err.code === 'number' ? { exitCode: err.code } : undefined,
     };
   }
 }
