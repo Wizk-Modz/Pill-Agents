@@ -15,6 +15,8 @@ Agent tương tác với hệ thống qua 6 tool. Mỗi tool khai báo schema th
 
 Chỉ tool ghi hoặc thực thi mới cần duyệt; tool chỉ đọc chạy thẳng.
 
+Ở chế độ `plan`, model chỉ được cấp `read_file`, `grep` và `glob`. Ba tool còn lại bị khoá; nếu model vẫn gọi, agent trả lỗi thay vì thực thi. Agent lọc tool ở cả danh sách gửi API lẫn lúc chạy, nên không thể vượt giới hạn bằng tool call tự phát.
+
 ## read_file
 
 Đọc file kèm số dòng (định dạng `số_dòng\tNội dung`). Dùng `offset`/`limit` để đọc từng phần file dài.

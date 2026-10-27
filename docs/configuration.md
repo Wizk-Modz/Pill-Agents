@@ -33,6 +33,7 @@ Cấu trúc thư mục:
     "PILL_API_KEY": "sk-...",
     "PILL_BASE_URL": "https://api.openai.com/v1",
     "PILL_MODEL": "gpt-4o-mini",
+    "PILL_MODE": "build",
     "PILL_MAX_STEPS": "25"
   }
 }
@@ -62,6 +63,7 @@ Thứ tự ưu tiên:
 | `PILL_API_KEY` | — | API key (**bắt buộc**) |
 | `PILL_BASE_URL` | `https://api.openai.com/v1` | Endpoint |
 | `PILL_MODEL` | `gpt-4o-mini` | Model |
+| `PILL_MODE` | `build` | Chế độ mặc định: `build` hoặc `plan` |
 | `PILL_MAX_STEPS` | `25` | Số bước tool tối đa mỗi lượt |
 | `PILL_CONFIG_DIR` | `~/.pill` | Thư mục cấu hình |
 
@@ -126,6 +128,9 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 
 | Lệnh | Tác dụng |
 |---|---|
+| `/plan` | Chuyển sang chế độ plan (chỉ đọc) |
+| `/build` | Chuyển sang chế độ build (đầy đủ tool) |
+| `/mode` | Xem chế độ hiện tại |
 | `/clear` | Xoá hội thoại, nạp lại PILL.md |
 | `/model` | Xem model hiện tại |
 | `/model <tên>` | Đổi model cho phiên này |
@@ -135,6 +140,36 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 | `/exit`, `/quit` | Thoát |
 
 Lệnh không nhận diện được sẽ báo `Lệnh không hỗ trợ: <tên>`.
+
+## Chế độ plan và build
+
+PillAgents có hai chế độ, lấy cảm hứng từ OpenCode:
+
+| Chế độ | Tool được cấp | Hành vi |
+|---|---|---|
+| `build` | Cả 6 tool | Sửa file, chạy lệnh; tool ghi/exec vẫn cần duyệt |
+| `plan` | `read_file`, `grep`, `glob` | Chỉ khảo sát và trả kế hoạch; không sửa file, không chạy lệnh |
+
+Đổi chế độ bằng `Tab` khi agent đang rảnh, hoặc `/plan` / `/build`. Chế độ hiện tại hiện ở header (`PLAN`/`BUILD`) và trong dữ liệu gửi `statusLine`. Hội thoại, lịch sử và token được giữ nguyên khi đổi chế độ; `/clear` cũng không đổi chế độ.
+
+Chế độ mặc định lấy theo thứ tự: `PILL_MODE` (biến môi trường hoặc `settings.json → env`) → `mode` ở cấp cao nhất của `settings.json` → `build`. Có thể đặt cho một lần chạy:
+
+```bash
+pill --mode plan
+```
+
+Hoặc trong `settings.json`:
+
+```json
+{
+  "mode": "plan",
+  "env": {
+    "PILL_API_KEY": "sk-..."
+  }
+}
+```
+
+Ở chế độ plan, agent chốt danh sách tool tại đầu mỗi lượt. Nếu model vẫn gọi `write_file`, `edit_file` hoặc `bash`, agent trả lỗi `Tool ... bị khoá ở chế độ plan.` và không thực thi. Đổi chế độ giữa lượt đang chạy không có hiệu lực cho tới lượt sau.
 
 ## Token usage
 
@@ -164,7 +199,7 @@ Mặc định PillAgents tự dựng footer. Muốn hiển thị thông tin riê
 }
 ```
 
-Lệnh chạy lại khi trạng thái phiên đổi (model, effort, token, đang xử lý, số tin chờ), gộp các lần đổi liền nhau trong 150ms. **Dòng đầu không rỗng** của stdout thay cho phần `pill 0.1.0 · model · effort · token`; phần spinner `đang xử lý` và `⏳ n chờ` vẫn nối phía sau. Mã màu ANSI trong stdout được giữ nguyên, nên script tự tô màu được.
+Lệnh chạy lại khi trạng thái phiên đổi (model, effort, chế độ, token, đang xử lý, số tin chờ), gộp các lần đổi liền nhau trong 150ms. **Dòng đầu không rỗng** của stdout thay cho phần `pill 0.1.0 · model · effort · token`; phần spinner `đang xử lý` và `⏳ n chờ` vẫn nối phía sau. Mã màu ANSI trong stdout được giữ nguyên, nên script tự tô màu được.
 
 Lệnh nhận JSON của phiên qua stdin:
 
@@ -173,6 +208,7 @@ Lệnh nhận JSON của phiên qua stdin:
 | `version` | Chuỗi phiên bản, ví dụ `pill 0.1.0` |
 | `model` | Model đang dùng |
 | `effort` | Mức suy luận, không có nếu chưa đặt |
+| `mode` | `build` hoặc `plan` |
 | `cwd` | Thư mục dự án |
 | `tokens.prompt`, `tokens.completion` | Token đã dùng trong phiên |
 | `busy` | Đang chạy lượt hay không |
@@ -255,7 +291,7 @@ Nếu proxy bỏ qua `stream: true` và trả JSON thường, PillAgents tự ph
 
 ## Phiên làm việc
 
-Mỗi lượt tự động lưu vào `~/.pill/sessions/<timestamp>.json`, gồm model, thư mục làm việc và toàn bộ hội thoại.
+Mỗi lượt tự động lưu vào `~/.pill/sessions/<timestamp>.json`, gồm model, chế độ, thư mục làm việc và toàn bộ hội thoại.
 
 Lỗi khi lưu phiên không chặn agent — chỉ bỏ qua im lặng.
 

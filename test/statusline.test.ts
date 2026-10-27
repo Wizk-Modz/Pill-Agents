@@ -11,6 +11,7 @@ const INPUT: StatusLineInput = {
   version: 'pill 0.1.0',
   model: 'gpt-4o-mini',
   effort: 'high',
+  mode: 'plan',
   cwd: '/du-an/mau',
   tokens: { prompt: 42, completion: 7 },
   busy: false,

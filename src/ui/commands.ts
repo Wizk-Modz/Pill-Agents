@@ -5,6 +5,9 @@ export type SlashCommand = {
 };
 
 export const SLASH_COMMANDS: SlashCommand[] = [
+  { name: '/plan', description: 'Chuyển sang chế độ plan (chỉ đọc)' },
+  { name: '/build', description: 'Chuyển sang chế độ build (đầy đủ tool)' },
+  { name: '/mode', description: 'Xem chế độ hiện tại' },
   { name: '/clear', description: 'Xoá hội thoại và nạp lại PILL.md' },
   { name: '/model', description: 'Xem hoặc đổi model: /model <tên>' },
   { name: '/effort', description: 'Xem hoặc đổi mức effort: /effort <low|medium|high|xhigh|max>' },
@@ -21,7 +24,12 @@ export function suggestCommands(value: string): SlashCommand[] {
 
 // Điền lệnh được chọn vào prompt, giữ dấu cách để gõ tiếp tham số.
 export function applySuggestion(command: SlashCommand): string {
-  return command.name === '/exit' || command.name === '/clear' || command.name === '/help'
+  return command.name === '/exit' ||
+    command.name === '/clear' ||
+    command.name === '/help' ||
+    command.name === '/plan' ||
+    command.name === '/build' ||
+    command.name === '/mode'
     ? command.name
     : `${command.name} `;
 }

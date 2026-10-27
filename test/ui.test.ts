@@ -4,10 +4,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import React from 'react';
+import { renderToString } from 'ink';
 import type { ToolCall } from '../src/types.js';
 import { buildApprovalLines, isDangerousCommand } from '../src/ui/approval.js';
+import { applySuggestion, suggestCommands } from '../src/ui/commands.js';
 import { fitText, formatDuration, formatElapsed, formatTokens, shortenCwd } from '../src/ui/format.js';
+import { Header } from '../src/ui/Header.js';
 import { hitTestColumn, hitTestLine, type LineOwner } from '../src/ui/hitTest.js';
+import { StatusBar } from '../src/ui/StatusBar.js';
 import { itemToLines } from '../src/ui/Transcript.js';
 
 // Tạo thư mục tạm cho mỗi test.
@@ -178,6 +183,56 @@ test('itemToLines hiện diff edit_file khi mở rộng', () => {
   assert.ok(text.includes('▾'));
   assert.ok(text.includes('- cũ'));
   assert.ok(text.includes('+ mới'));
+});
+
+test('gợi ý lệnh có /plan, /build, /mode và điền đúng', () => {
+  const plan = suggestCommands('/pl').find((command) => command.name === '/plan');
+  assert.ok(plan);
+  assert.equal(applySuggestion(plan), '/plan');
+  assert.ok(suggestCommands('/bu').some((command) => command.name === '/build'));
+  const mode = suggestCommands('/mo').find((command) => command.name === '/mode');
+  assert.ok(mode);
+  assert.equal(applySuggestion(mode), '/mode');
+});
+
+test('Header và StatusBar hiện chế độ hiện tại', () => {
+  const header = (mode: 'build' | 'plan') =>
+    plain(
+      renderToString(
+        React.createElement(Header, {
+          version: 'pill 0.1.0',
+          mode,
+          model: 'gpt-4o-mini',
+          effort: 'high',
+          cwd: '/du-an',
+          branch: 'main',
+          columns: 80,
+        }),
+      ),
+    );
+  assert.match(header('plan'), /PLAN/);
+  assert.match(header('build'), /BUILD/);
+
+  const status = (mode: 'build' | 'plan') =>
+    plain(
+      renderToString(
+        React.createElement(StatusBar, {
+          version: 'pill 0.1.0',
+          mode,
+          model: 'gpt-4o-mini',
+          tokens: { prompt: 0, completion: 0, last: 0 },
+          toolCount: 0,
+          elapsedMs: 0,
+          busy: false,
+          queueCount: 0,
+          spinnerFrame: 0,
+          scrolledLines: 0,
+          columns: 80,
+        }),
+      ),
+    );
+  assert.ok(status('plan').includes('Tab build'));
+  assert.ok(status('build').includes('Tab plan'));
 });
 
 test('itemToLines thu gọn thinking có marker và gợi ý click', () => {

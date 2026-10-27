@@ -1,4 +1,6 @@
 // Kiểu dữ liệu dùng chung cho agent và giao diện.
+export type AgentMode = 'build' | 'plan';
+
 export type ToolCall = {
   id: string;
   name: string;

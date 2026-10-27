@@ -1,6 +1,7 @@
 // Ô nhập kiểu Claude Code: một dòng ❯, tự giãn tối đa 8 dòng, có viền trên dưới.
 import React from 'react';
 import { Box, Text } from 'ink';
+import type { AgentMode } from '../types.js';
 
 export type InputState = { value: string; cursor: number; historyIndex: number };
 
@@ -208,6 +209,7 @@ export function InputBox({
   cursor,
   columns,
   busy,
+  mode,
   placeholder,
   maxLines = 8,
 }: {
@@ -215,6 +217,7 @@ export function InputBox({
   cursor: number;
   columns: number;
   busy: boolean;
+  mode: AgentMode;
   placeholder: string;
   maxLines?: number;
 }): React.ReactElement {
@@ -227,6 +230,7 @@ export function InputBox({
   );
   const visible = layout.chunks.slice(start, start + visibleCount);
   const rule = '─'.repeat(Math.max(1, columns));
+  const accent = busy ? 'yellow' : mode === 'plan' ? 'magenta' : 'cyan';
 
   return (
     <Box flexDirection="column" width={columns}>
@@ -240,7 +244,7 @@ export function InputBox({
         const after = isCursor ? chunk.text.slice(layout.cursorCol + 1) : '';
         return (
           <Text key={chunkIndex} wrap="truncate-end">
-            <Text color={busy ? 'yellow' : 'cyan'} bold>
+            <Text color={accent} bold>
               {prefix}
             </Text>
             {!value && chunkIndex === 0 ? (

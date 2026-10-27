@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { buildSystemPrompt } from '../src/agent.js';
+import { buildSystemPrompt, toolsForMode } from '../src/agent.js';
+import { createTools } from '../src/tools.js';
 
 test('buildSystemPrompt nêu thư mục làm việc', () => {
   const prompt = buildSystemPrompt('/du-an/mau');
@@ -27,4 +28,31 @@ test('buildSystemPrompt có đủ các mục chính', () => {
   for (const heading of ['## Môi trường', '## Cách làm việc', '## Tool đang có', '## Viết code', '## Trả lời']) {
     assert.ok(prompt.includes(heading), `thiếu mục ${heading}`);
   }
+});
+
+test('buildSystemPrompt ở chế độ plan nêu rõ chỉ đọc và cách lập kế hoạch', () => {
+  const prompt = buildSystemPrompt('/du-an/mau', 'plan');
+  assert.match(prompt, /chế độ plan \(chỉ đọc\)/);
+  assert.ok(prompt.includes('## Chế độ plan'));
+  assert.ok(prompt.includes('write_file, edit_file, bash bị khoá'));
+  assert.ok(prompt.includes('## Trả lời'), 'vẫn giữ quy tắc trả lời');
+  assert.ok(!prompt.includes('write_file, edit_file, bash: cần người dùng duyệt'));
+});
+
+test('buildSystemPrompt mặc định là build, không có mục plan', () => {
+  const prompt = buildSystemPrompt('/du-an/mau');
+  assert.ok(prompt.includes('write_file, edit_file, bash: cần người dùng duyệt'));
+  assert.ok(!prompt.includes('## Chế độ plan'));
+});
+
+test('toolsForMode chỉ giữ tool đọc ở chế độ plan', () => {
+  const tools = createTools('/du-an/mau');
+  assert.deepEqual(
+    toolsForMode(tools, 'plan').map((tool) => tool.name),
+    ['read_file', 'grep', 'glob'],
+  );
+  assert.deepEqual(
+    toolsForMode(tools, 'build').map((tool) => tool.name),
+    ['read_file', 'write_file', 'edit_file', 'bash', 'grep', 'glob'],
+  );
 });

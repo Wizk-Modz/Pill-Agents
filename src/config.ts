@@ -2,10 +2,12 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import type { AgentMode } from './types.js';
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const EFFORT_LEVELS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const AGENT_MODES: AgentMode[] = ['build', 'plan'];
 
 export type Config = {
   apiKey: string;
@@ -15,6 +17,7 @@ export type Config = {
   maxSteps?: number;
   configDir: string;
   effort?: Effort;
+  mode: AgentMode;
   statusLine?: StatusLineConfig;
 };
 
@@ -40,6 +43,13 @@ export function parseEffort(value: string | undefined): Effort | undefined {
   return (EFFORT_LEVELS as string[]).includes(normalized) ? (normalized as Effort) : undefined;
 }
 
+// Kiểm tra giá trị có phải chế độ agent hợp lệ.
+export function parseMode(value: unknown): AgentMode | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return (AGENT_MODES as string[]).includes(normalized) ? (normalized as AgentMode) : undefined;
+}
+
 // Đọc mục statusLine; chỉ nhận type "command" kèm lệnh không rỗng, bỏ qua phần còn lại.
 export function parseStatusLine(value: unknown): StatusLineConfig | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -53,6 +63,7 @@ export function parseStatusLine(value: unknown): StatusLineConfig | undefined {
 type Settings = {
   env?: Record<string, string>;
   model?: string;
+  mode?: unknown;
   statusLine?: unknown;
 };
 
@@ -96,6 +107,7 @@ export function loadConfig(cwd: string = process.cwd()): Config {
     maxSteps: parseMaxSteps(pick('PILL_MAX_STEPS')),
     configDir: dir,
     effort: parseEffort(pick('PILL_EFFORT')),
+    mode: parseMode(pick('PILL_MODE')) ?? parseMode(settings.mode) ?? 'build',
     statusLine: parseStatusLine(settings.statusLine),
   };
 }

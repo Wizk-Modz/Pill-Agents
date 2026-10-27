@@ -2,10 +2,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { homedir } from 'node:os';
+import type { AgentMode } from '../types.js';
 import { fitText, shortenCwd } from './format.js';
 
 export function Header({
   version,
+  mode,
   model,
   effort,
   cwd,
@@ -13,6 +15,7 @@ export function Header({
   columns,
 }: {
   version: string;
+  mode: AgentMode;
   model: string;
   effort?: string;
   cwd: string;
@@ -32,7 +35,11 @@ export function Header({
       <Box paddingX={1}>
         <Text wrap="truncate-end">
           <Text bold color="cyan">
-            PillAgents {fitText(label, Math.max(8, columns - 20))}
+            PillAgents {fitText(label, Math.max(8, columns - 28))}
+          </Text>
+          <Text bold color={mode === 'plan' ? 'magenta' : 'green'}>
+            {' '}
+            {mode.toUpperCase()}
           </Text>
           {details ? <Text dimColor> · {details}</Text> : null}
         </Text>

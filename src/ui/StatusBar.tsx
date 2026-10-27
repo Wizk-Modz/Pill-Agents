@@ -1,6 +1,7 @@
 // Footer: trạng thái phiên, token, số tool, thời gian và gợi ý phím theo ngữ cảnh.
 import React from 'react';
 import { Box, Text } from 'ink';
+import type { AgentMode } from '../types.js';
 import { SPINNER_FRAMES, formatElapsed, formatTokens } from './format.js';
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
@@ -12,6 +13,7 @@ function visibleLength(text: string): number {
 
 export function StatusBar({
   version,
+  mode,
   model,
   effort,
   tokens,
@@ -25,6 +27,7 @@ export function StatusBar({
   columns,
 }: {
   version: string;
+  mode: AgentMode;
   model: string;
   effort?: string;
   tokens: { prompt: number; completion: number; last: number };
@@ -95,7 +98,7 @@ export function StatusBar({
       ? `↑ đã cuộn ${scrolledLines} dòng · PageDown về cuối`
       : busy
         ? 'Esc huỷ'
-        : 'Enter gửi · /help';
+        : `Tab ${mode === 'plan' ? 'build' : 'plan'} · Enter gửi · /help`;
   const rightLength = visibleLength(right);
   const showRight = columns >= 64 && visibleLength(leftPlain) + rightLength + 4 <= columns;
   const leftWidth = Math.max(10, columns - 2 - (showRight ? rightLength + 1 : 0));

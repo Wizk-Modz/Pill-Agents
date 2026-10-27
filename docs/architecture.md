@@ -18,22 +18,22 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 
 | File | Trách nhiệm | Dòng |
 |---|---|---|
-| `src/main.tsx` | Điểm vào: nạp config, tạo agent, mở TUI | 144 |
-| `src/config.ts` | Đọc `settings.json` và biến môi trường | 101 |
+| `src/main.tsx` | Điểm vào: nạp config, tạo agent, mở TUI | 157 |
+| `src/config.ts` | Đọc `settings.json` và biến môi trường, gồm chế độ mặc định | 113 |
 | `src/instructions.ts` | Nạp `PILL.md` global + project | 64 |
-| `src/types.ts` | Kiểu dữ liệu dùng chung, metadata UI của tool | 36 |
+| `src/types.ts` | Kiểu dữ liệu dùng chung, chế độ agent, metadata UI của tool | 38 |
 | `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 153 |
 | `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 263 |
-| `src/agent.ts` | Vòng lặp agent, quản lý hội thoại, lưu phiên, đo thời gian tool | 246 |
-| `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 70 |
-| `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn | 700 |
-| `src/ui/InputBox.tsx` | Ô nhập nhiều dòng, logic con trỏ, history | 264 |
+| `src/agent.ts` | Vòng lặp agent, chọn tool theo chế độ, quản lý hội thoại, lưu phiên | 312 |
+| `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 72 |
+| `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn | 744 |
+| `src/ui/InputBox.tsx` | Ô nhập nhiều dòng, logic con trỏ, history | 268 |
 | `src/ui/useKeys.ts` | Parse phím thô, chuột và paste từ stdin | 257 |
 | `src/ui/markdown.ts` | Render markdown thành chuỗi ANSI | 408 |
 | `src/ui/Transcript.tsx` | Item hội thoại thành dòng, thẻ tool và diff | 202 |
-| `src/ui/Header.tsx` | Header phiên bản, model, thư mục, nhánh git | 43 |
-| `src/ui/StatusBar.tsx` | Footer trạng thái, token, thời gian, gợi ý phím | 117 |
-| `src/ui/Welcome.tsx` | Màn hình chào khi phiên trống | 24 |
+| `src/ui/Header.tsx` | Header phiên bản, chế độ, model, thư mục, nhánh git | 50 |
+| `src/ui/StatusBar.tsx` | Footer trạng thái, token, thời gian, gợi ý phím | 120 |
+| `src/ui/Welcome.tsx` | Màn hình chào khi phiên trống | 28 |
 | `src/ui/QueuePanel.tsx` | Bảng tin nhắn đang xếp hàng | 32 |
 | `src/ui/ApprovalPanel.tsx` | Hiển thị hộp duyệt tool | 16 |
 | `src/ui/approval.ts` | Dựng nội dung duyệt: lệnh, diff, cảnh báo | 179 |
@@ -42,7 +42,7 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 | `src/ui/git.ts` | Đọc nhánh git cho header | 16 |
 | `src/ui/hitTest.ts` | Đổi tọa độ chuột thành dòng/mục transcript | 25 |
 | `src/ui/useTranscriptLines.ts` | Cache dòng ANSI và bản đồ chủ sở hữu dòng | 67 |
-| `src/ui/commands.ts` | Gợi ý lệnh gạch chéo khi gõ `/` | 27 |
+| `src/ui/commands.ts` | Gợi ý lệnh gạch chéo khi gõ `/` | 35 |
 
 ## Bố cục TUI
 
@@ -79,6 +79,7 @@ Việc đo nằm trong `agent.ts`, không sửa timeout, output hay nội dung t
    └─ rảnh       → runTurn(text)
 
 2. Agent.send(text, signal, handlers)
+   chốt chế độ, chọn tool, cập nhật system prompt
    push message user vào hội thoại
    lặp tối đa PILL_MAX_STEPS lần:
      a. streamChat()  → phát text/thinking qua handlers
@@ -89,12 +90,30 @@ Việc đo nằm trong `agent.ts`, không sửa timeout, output hay nội dung t
           - chạy tool, push kết quả vào hội thoại
      e. quay lại (a)
 
-3. finally: lưu phiên ra ~/.pill/sessions/<timestamp>.json
+3. finally: lưu phiên (model, chế độ, hội thoại) ra ~/.pill/sessions/<timestamp>.json
 ```
 
 **Điểm quan trọng:** mọi tool call trong một lượt đều phải có kết quả ghi vào hội thoại, kể cả khi bị huỷ. API yêu cầu mỗi `tool_call` phải có message `tool` tương ứng, nếu thiếu thì lượt sau sẽ lỗi.
 
 Lượt xong, App lấy tin kế tiếp trong hàng đợi và đưa lại qua `submit()` — nên lệnh gạch chéo xếp hàng vẫn được thực thi như lệnh, không bị gửi cho model như tin nhắn thường.
+
+`Esc` chỉ huỷ lượt đang chạy và từ chối tool đang chờ, **không** xoá hàng đợi. `finally` vẫn lấy tin kế tiếp, nên các tin đã xếp hàng tiếp tục chạy. Hàng đợi chỉ hiện trong bảng cạnh ô nhập và footer, không ghi thêm item “đã xếp hàng” vào transcript.
+
+## Chế độ plan và build
+
+`AgentMode` (`build` | `plan`) nằm trong `types.ts`; `config.mode` lấy từ `PILL_MODE`, `mode` trong `settings.json` hoặc mặc định `build`.
+
+`Agent` dựng sẵn hai system prompt từ cùng nội dung PILL.md đã nạp — nên `/clear` mới nạp lại file, còn đổi chế độ không đọc lại đĩa. Đầu mỗi lượt `send()` chốt `config.mode`, thay message system bằng prompt tương ứng, rồi chọn tool qua `toolsForMode()`:
+
+```ts
+const mode = this.config.mode;          // chốt đầu lượt
+const tools = toolsForMode(this.tools, mode);
+this.messages[0] = { role: 'system', content: this.prompts[mode] };
+```
+
+`plan` chỉ giữ `read_file`, `grep`, `glob`. `runToolCalls()` dùng đúng map tool đã gửi model; nếu model vẫn gọi `write_file`/`edit_file`/`bash`, agent ghi kết quả lỗi `Tool ... bị khoá ở chế độ plan.` vào hội thoại và **không chạy** tool. Nhờ vậy giới hạn được thực thi ở agent, không chỉ ẩn khỏi danh sách gửi API.
+
+App giữ `modeRef`/`mode` giống các cặp state khác. `Tab` đổi chế độ khi agent rảnh; `/plan` và `/build` đổi trực tiếp. Hội thoại và token giữ nguyên khi đổi; chế độ hiện tại được đưa vào header, footer và `StatusLineInput`, đồng thời lưu vào file phiên.
 
 ## Quản lý state trong App
 
@@ -109,7 +128,7 @@ const setBusySync = (value: boolean) => {
 
 Lý do: nếu chỉ dùng `useEffect(() => { ref.current = state }, [state])`, khi gõ nhanh nhiều ký tự trong cùng một frame, ref sẽ bị ghi đè bằng giá trị cũ và **mất ký tự**.
 
-Các cặp tương tự: `inputRef`/`input`, `pendingRef`/`pendingApproval`, `scrollRef`/`scrollTop`.
+Các cặp tương tự: `inputRef`/`input`, `pendingRef`/`pendingApproval`, `scrollRef`/`scrollTop`, `modeRef`/`mode`.
 
 ## Streaming và throttle
 
@@ -155,13 +174,13 @@ Footer có hai chế độ, chọn theo `statusLine` trong `settings.json`:
 - Chưa cấu hình: App tự dựng `pill 0.1.0 · model · effort`, kèm token (`↑N ↓N`), số tool, thời gian lượt đang chạy. Dưới 100 cột, phần model/effort được lược bớt vì header đã hiển thị chúng.
 - Đã cấu hình: `runStatusLine()` chạy lệnh của người dùng và lấy dòng đầu của stdout; phần token/số tool/thời gian tự dựng được thay bằng dòng này.
 
-`statusSignature` là chuỗi gộp các giá trị ảnh hưởng tới dòng trạng thái (lệnh, model, effort, token, đang bận, số tin chờ). Effect chạy lại khi chuỗi này đổi, gộp các lần đổi liền nhau bằng debounce 150ms; cách này tránh phải đưa cả object vào danh sách phụ thuộc, và `/model` hay `/effort` cũng kích hoạt làm mới vì chúng nằm trong chuỗi. Số tool và thời gian không nằm trong chữ ký vì thay đổi liên tục mà không cần chạy lại statusLine.
+`statusSignature` là chuỗi gộp các giá trị ảnh hưởng tới dòng trạng thái (lệnh, model, effort, chế độ, token, đang bận, số tin chờ). Effect chạy lại khi chuỗi này đổi, gộp các lần đổi liền nhau bằng debounce 150ms; cách này tránh phải đưa cả object vào danh sách phụ thuộc, và `/model`, `/effort` hay `Tab` cũng kích hoạt làm mới vì chúng nằm trong chuỗi. Số tool và thời gian không nằm trong chữ ký vì thay đổi liên tục mà không cần chạy lại statusLine.
 
 Lệnh nhận JSON của phiên qua stdin (`StatusLineInput`) nên script tự quyết định hiển thị gì. `runStatusLine()` chạy lệnh qua shell của nền tảng, trong thư mục dự án, kèm `childEnv()` giống tool `bash`. Lệnh lỗi, không in gì hoặc quá 5 giây đều trả `undefined` → App quay về dòng mặc định, không có thông báo lỗi nào hiện ra.
 
 Phần spinner `đang xử lý (Esc huỷ)` và `⏳ n chờ` luôn được nối sau dòng trạng thái vì đây là thông tin người dùng cần thấy ngay. Spinner dùng bộ khung braille (`SPINNER_FRAMES`, đổi khung mỗi 120ms) để thấy rõ máy vẫn đang chạy. Khung hình spinner **không** nằm trong `statusSignature`, nên lệnh statusLine không bị chạy lại theo nhịp quay.
 
-Bên phải footer là gợi ý theo ngữ cảnh: `Enter gửi · /help` khi rảnh, `Esc huỷ` khi đang chạy, `↑ đã cuộn N dòng · PageDown về cuối` khi transcript không ở cuối. Gợi ý này chỉ hiện khi terminal đủ rộng và tổng độ dài hai bên vừa một dòng; nếu không, footer dành toàn bộ chỗ cho trạng thái và cắt bằng `truncate-end`. Độ dài được đo sau khi bỏ mã ANSI để statusLine tô màu không làm lệch layout.
+Bên phải footer là gợi ý theo ngữ cảnh: `Tab build · Enter gửi · /help` khi rảnh ở chế độ plan (và ngược lại), `Esc huỷ` khi đang chạy, `↑ đã cuộn N dòng · PageDown về cuối` khi transcript không ở cuối. Gợi ý này chỉ hiện khi terminal đủ rộng và tổng độ dài hai bên vừa một dòng; nếu không, footer dành toàn bộ chỗ cho trạng thái và cắt bằng `truncate-end`. Độ dài được đo sau khi bỏ mã ANSI để statusLine tô màu không làm lệch layout.
 
 Chuỗi ANSI trong stdout được giữ nguyên: `<Text>` của Ink render mã màu, nên script tự tô màu được.
 
@@ -277,9 +296,11 @@ Không hardcode đường dẫn POSIX:
 
 Prompt nền đứng trước phần PILL.md nạp ở mục dưới, nên quy tắc riêng của dự án luôn thắng.
 
+Ở chế độ `plan`, mục **Tool đang có** chỉ liệt kê ba tool đọc và nêu rõ `write_file`/`edit_file`/`bash` bị khoá; prompt có thêm mục **Chế độ plan** yêu cầu trả về mục tiêu, file liên quan, các bước, rủi ro và cách kiểm chứng. Cả hai prompt dùng chung phần PILL.md đã nạp.
+
 ## PILL.md
 
-Nạp một lần lúc tạo agent, chèn vào cuối system prompt:
+Nạp một lần lúc tạo agent, chèn vào cuối system prompt của cả hai chế độ:
 
 ```
 ~/.pill/PILL.md                    ← hướng dẫn chung

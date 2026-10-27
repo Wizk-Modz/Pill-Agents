@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, measureElement, useApp, useWindowSize, type DOMElement } from 'ink';
 import { Agent } from '../agent.js';
 import { EFFORT_LEVELS, parseEffort, type Config } from '../config.js';
-import type { ToolCall, ToolResult, Usage } from '../types.js';
+import type { AgentMode, ToolCall, ToolResult, Usage } from '../types.js';
 import { runStatusLine, type StatusLineInput } from '../statusline.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
 import { applySuggestion, suggestCommands } from './commands.js';
@@ -37,6 +37,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const columns = Math.max(20, size.columns || 80);
   const rows = Math.max(10, size.rows || 24);
   const [items, setItems] = useState<TranscriptItem[]>([]);
+  const [mode, setModeState] = useState<AgentMode>(config.mode);
   const [streaming, setStreaming] = useState('');
   const [thinkingLive, setThinkingLive] = useState('');
   const [busy, setBusy] = useState(false);
@@ -65,6 +66,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const pendingRef = useRef<PendingApproval | null>(null);
   const busyRef = useRef(false);
   const inputRef = useRef(input);
+  const modeRef = useRef(config.mode);
   const scrollRef = useRef<number | null>(null);
   const queueRef = useRef<string[]>([]);
   const submitRef = useRef<((text: string) => void) | null>(null);
@@ -89,6 +91,18 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     scrollRef.current = value;
     setScrollTop(value);
   }, []);
+  const setMode = useCallback(
+    (next: AgentMode) => {
+      modeRef.current = next;
+      config.mode = next;
+      setModeState(next);
+    },
+    [config],
+  );
+  const toggleMode = useCallback(() => {
+    if (busyRef.current) return;
+    setMode(modeRef.current === 'plan' ? 'build' : 'plan');
+  }, [setMode]);
 
   // Thêm một mục bất biến vào transcript.
   const pushItem = useCallback((item: ItemBody) => {
@@ -143,7 +157,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     if (text) pushItem({ kind: 'assistant', text });
   }, [pushItem]);
 
-  // Dừng lượt đang chạy, xoá hàng đợi và từ chối tool đang chờ.
+  // Dừng lượt đang chạy, từ chối tool đang chờ và giữ hàng đợi để chạy tiếp.
   const abort = useCallback(() => {
     controllerRef.current?.abort();
     if (pendingRef.current) {
@@ -151,8 +165,6 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       setPendingSync(null);
       setApprovalExpanded(false);
     }
-    queueRef.current = [];
-    setQueue([]);
     commitThinking();
     commitStreaming();
   }, [commitThinking, commitStreaming, setPendingSync]);
@@ -274,6 +286,24 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         pushItem({ kind: 'info', text: 'Đã xoá hội thoại.' });
         return true;
       }
+      if (command === '/plan' || command === '/build') {
+        const next: AgentMode = command === '/plan' ? 'plan' : 'build';
+        const label = next === 'plan' ? 'plan (chỉ đọc)' : 'build (đầy đủ tool)';
+        if (modeRef.current === next) {
+          pushItem({ kind: 'info', text: `Đang ở chế độ ${label}.` });
+        } else {
+          setMode(next);
+          pushItem({ kind: 'info', text: `Đã chuyển sang chế độ ${label}.` });
+        }
+        return true;
+      }
+      if (command === '/mode') {
+        pushItem({
+          kind: 'info',
+          text: `Chế độ hiện tại: ${modeRef.current === 'plan' ? 'plan (chỉ đọc)' : 'build (đầy đủ tool)'}`,
+        });
+        return true;
+      }
       if (command === '/model') {
         const name = rest.join(' ').trim();
         if (!name) {
@@ -305,14 +335,14 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • Ctrl+D thoát • /clear /model /effort /help /exit',
+          text: 'Enter gửi • Tab đổi chế độ plan/build • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • Ctrl+D thoát • /plan /build /mode /clear /model /effort /help /exit',
         });
         return true;
       }
       pushItem({ kind: 'error', text: `Lệnh không hỗ trợ: ${command}` });
       return true;
     },
-    [agent, config, exit, invalidate, pushItem, setScrollSync],
+    [agent, config, exit, invalidate, pushItem, setMode, setScrollSync],
   );
 
   // Gửi tin nhắn: chạy ngay nếu rảnh, xếp hàng nếu đang bận.
@@ -321,16 +351,12 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (busyRef.current) {
         queueRef.current.push(text);
         setQueue([...queueRef.current]);
-        pushItem({
-          kind: 'info',
-          text: `⏳ Đã xếp hàng (${queueRef.current.length}): ${text.split('\n')[0]?.slice(0, 80) ?? ''}`,
-        });
         return;
       }
       if (runCommand(text)) return;
       void runTurn(text);
     },
-    [pushItem, runCommand, runTurn],
+    [runCommand, runTurn],
   );
   submitRef.current = submit;
 
@@ -403,6 +429,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const statusSignature = [
     statusCommand ?? '',
     builtinStatus,
+    mode,
     tokenUsage.prompt,
     tokenUsage.completion,
     busy,
@@ -420,6 +447,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       version,
       model: config.model,
       effort: config.effort,
+      mode,
       cwd: config.cwd,
       tokens: { prompt: tokenUsage.prompt, completion: tokenUsage.completion },
       busy,
@@ -591,6 +619,12 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         }
       }
 
+      // Tab đổi chế độ khi bảng gợi ý lệnh không mở; không đổi giữa lượt đang chạy.
+      if (key.tab) {
+        toggleMode();
+        return;
+      }
+
       // PageUp/PageDown cuộn theo trang; Shift+↑/↓ cuộn 3 dòng.
       if (key.pageUp || key.pageDown || (key.shift && (key.upArrow || key.downArrow))) {
         if (key.pageUp) scrollBy(-viewportHeight);
@@ -618,6 +652,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       submit,
       suggestions,
       suggestionIndex,
+      toggleMode,
       toggleThinking,
       toggleTools,
       viewportHeight,
@@ -632,6 +667,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
     <Box flexDirection="column" height={rows} width={columns}>
       <Header
         version={version}
+        mode={mode}
         model={config.model}
         effort={config.effort}
         cwd={config.cwd}
@@ -677,12 +713,20 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         cursor={input.cursor}
         columns={columns}
         busy={busy}
-        placeholder={busy ? 'Nhập để xếp hàng tin nhắn…' : 'Nhập yêu cầu cho PillAgents…'}
+        mode={mode}
+        placeholder={
+          busy
+            ? 'Nhập để xếp hàng tin nhắn…'
+            : mode === 'plan'
+              ? 'Mô tả điều cần khảo sát và lập kế hoạch…'
+              : 'Nhập yêu cầu cho PillAgents…'
+        }
         maxLines={MAX_PROMPT_LINES}
       />
 
       <StatusBar
         version={version}
+        mode={mode}
         model={config.model}
         effort={config.effort}
         tokens={tokenUsage}

@@ -3,7 +3,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { Agent } from './agent.js';
-import { loadConfig } from './config.js';
+import { AGENT_MODES, loadConfig, parseMode } from './config.js';
 import { createTools } from './tools.js';
 import { App } from './ui/App.js';
 
@@ -19,6 +19,7 @@ TÙY CHỌN
   -v, --version           In phiên bản
   -m, --model <tên>       Model dùng cho phiên này
   -e, --effort <mức>      Mức suy luận: low, medium, high, xhigh, max
+      --mode <chế độ>     Chế độ: build (mặc định) hoặc plan (chỉ đọc)
       --base-url <url>    Endpoint tương thích OpenAI
       --max-steps <n>     Số bước tool tối đa mỗi lượt (mặc định không giới hạn)
       --config-dir <dir>  Thư mục cấu hình (mặc định ~/.pill)
@@ -28,6 +29,7 @@ BIẾN MÔI TRƯỜNG
   PILL_BASE_URL           Endpoint, mặc định https://api.openai.com/v1
   PILL_MODEL              Model, mặc định gpt-4o-mini
   PILL_EFFORT             Mức suy luận
+  PILL_MODE               Chế độ mặc định: build hoặc plan
   PILL_MAX_STEPS          Số bước tool tối đa
   PILL_CONFIG_DIR         Thư mục cấu hình
 
@@ -39,6 +41,7 @@ CẤU HÌNH
 VÍ DỤ
   pill
   pill --model gpt-5 --effort high
+  pill --mode plan
   pill --base-url http://localhost:11434/v1 --model qwen2.5-coder
 
 Phím tắt trong phiên: gõ /help
@@ -47,6 +50,7 @@ Phím tắt trong phiên: gõ /help
 type Args = {
   model?: string;
   effort?: string;
+  mode?: string;
   baseUrl?: string;
   maxSteps?: string;
   configDir?: string;
@@ -78,6 +82,9 @@ function parseArgs(argv: string[]): { action: 'run'; args: Args } | { action: 'h
       case '-e':
       case '--effort':
         args.effort = takeValue();
+        break;
+      case '--mode':
+        args.mode = takeValue();
         break;
       case '--base-url':
         args.baseUrl = takeValue();
@@ -119,6 +126,12 @@ function main(): void {
   if (args.configDir) process.env.PILL_CONFIG_DIR = args.configDir;
   if (args.model) process.env.PILL_MODEL = args.model;
   if (args.effort) process.env.PILL_EFFORT = args.effort;
+  if (args.mode) {
+    if (!parseMode(args.mode)) {
+      fail(`Chế độ không hợp lệ: ${args.mode}. Chọn: ${AGENT_MODES.join(' hoặc ')}.`);
+    }
+    process.env.PILL_MODE = args.mode;
+  }
   if (args.baseUrl) process.env.PILL_BASE_URL = args.baseUrl;
   if (args.maxSteps) process.env.PILL_MAX_STEPS = args.maxSteps;
 

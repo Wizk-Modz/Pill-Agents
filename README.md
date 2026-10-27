@@ -31,7 +31,7 @@ npm start
 npm link && pill
 ```
 
-Biến môi trường chính: `PILL_API_KEY` (bắt buộc), `PILL_BASE_URL`, `PILL_MODEL`, `PILL_MAX_STEPS`, `PILL_CONFIG_DIR`. Chi tiết và ví dụ với provider khác: [docs/configuration.md](docs/configuration.md).
+Biến môi trường chính: `PILL_API_KEY` (bắt buộc), `PILL_BASE_URL`, `PILL_MODEL`, `PILL_MODE`, `PILL_MAX_STEPS`, `PILL_CONFIG_DIR`. Chi tiết và ví dụ với provider khác: [docs/configuration.md](docs/configuration.md).
 
 ## PILL.md — hướng dẫn cho agent
 
@@ -53,7 +53,7 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 
 Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 80×24):
 
-- **Header**: phiên bản, model, effort, thư mục và nhánh git; thu gọn khi hẹp.
+- **Header**: phiên bản, chế độ (`PLAN`/`BUILD`), model, effort, thư mục và nhánh git; thu gọn khi hẹp.
 - **Welcome**: hiện khi phiên chưa có tin nhắn, kèm gợi ý lệnh.
 - **Transcript**: markdown, thinking, thẻ tool và diff; chỉ vùng này cuộn.
 - **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập, tối đa 3 tin xếp hàng hiển thị.
@@ -64,6 +64,7 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 | Phím | Tác dụng |
 |---|---|
 | `Enter` | Gửi tin nhắn |
+| `Tab` | Đổi chế độ `build` ↔ `plan` (khi bảng gợi ý lệnh đang đóng) |
 | `\` + `Enter` / `Shift+Enter` / `Ctrl+J` | Xuống dòng trong prompt |
 | `↑` / `↓` | Lịch sử lệnh (hoặc di chuyển giữa các dòng khi soạn nhiều dòng) |
 | `Shift+↑` / `Shift+↓` | Cuộn nội dung 3 dòng |
@@ -77,11 +78,11 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 | Click tiêu đề Thinking/tool | Mở/đóng riêng mục đó |
 | `d` (khi chờ duyệt) | Xem đầy đủ / thu gọn nội dung duyệt |
 | `y` / `n` (khi chờ duyệt) | Đồng ý / từ chối tool |
-| `Esc` | Huỷ lượt đang chạy |
+| `Esc` | Huỷ lượt đang chạy; tin trong hàng đợi vẫn chạy tiếp |
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
 
-Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
+Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Bấm `Esc` để huỷ lượt đang chạy không xoá hàng đợi — tin kế tiếp vẫn được chạy. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
 
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `edit_file`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
 
@@ -98,9 +99,24 @@ Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), c�
 }
 ```
 
-Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `cwd`, `tokens`, `busy`, `queued`). Chi tiết và script mẫu: [docs/configuration.md](docs/configuration.md#dòng-trạng-thái-tự-cấu-hình).
+Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `mode`, `cwd`, `tokens`, `busy`, `queued`). Chi tiết và script mẫu: [docs/configuration.md](docs/configuration.md#dòng-trạng-thái-tự-cấu-hình).
 
-Lệnh: `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
+Lệnh: `/plan`, `/build`, `/mode`, `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
+
+## Chế độ plan và build
+
+Giống OpenCode, PillAgents có hai chế độ:
+
+| Chế độ | Tool | Dùng khi |
+|---|---|---|
+| `build` (mặc định) | Đủ 6 tool, ghi/sửa/chạy lệnh cần duyệt | Triển khai, sửa lỗi, chạy test |
+| `plan` | Chỉ `read_file`, `grep`, `glob` | Khảo sát code và lập kế hoạch trước khi sửa |
+
+Bấm `Tab` để đổi chế độ khi agent đang rảnh, hoặc dùng `/plan` / `/build`. Header hiện `PLAN` màu hồng hoặc `BUILD` màu xanh; `/mode` xem chế độ hiện tại. Hội thoại được giữ nguyên khi đổi chế độ.
+
+Ở chế độ `plan`, model không được cấp `write_file`, `edit_file` hay `bash`, và system prompt yêu cầu trả về kế hoạch thay vì tự sửa. Nếu model vẫn gọi tool bị khoá, agent từ chối và ghi lỗi vào hội thoại — không có thay đổi nào được thực hiện.
+
+Đặt chế độ mặc định bằng `--mode plan`, biến `PILL_MODE` hoặc `mode` trong `settings.json`. Chế độ hiện tại cũng được lưu vào file phiên.
 
 ## Tool
 
@@ -113,7 +129,7 @@ Lệnh: `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 | `grep` | Không | Tìm theo regex (ripgrep, fallback Node) |
 | `glob` | Không | Liệt kê file theo pattern |
 
-Phiên được lưu tại `~/.pill/sessions/`.
+Ở chế độ `plan`, chỉ ba tool đọc (`read_file`, `grep`, `glob`) được cấp cho model. Phiên được lưu tại `~/.pill/sessions/`.
 
 ## Test
 

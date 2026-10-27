@@ -18,7 +18,11 @@ export function Welcome({ version }: { version: string }): React.ReactElement {
         <Text color="cyan">/effort</Text>
         <Text dimColor> đổi mức suy luận</Text>
       </Text>
-      <Text dimColor>Gõ yêu cầu bên dưới rồi Enter để bắt đầu. Click tiêu đề Thinking hoặc tool để mở rộng.</Text>
+      <Text>
+        <Text color="magenta">Tab</Text>
+        <Text dimColor> đổi chế độ plan (chỉ đọc) ↔ build. Click tiêu đề Thinking hoặc tool để mở rộng.</Text>
+      </Text>
+      <Text dimColor>Gõ yêu cầu bên dưới rồi Enter để bắt đầu.</Text>
     </Box>
   );
 }

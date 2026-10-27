@@ -1,5 +1,6 @@
 // Dòng trạng thái tự cấu hình: chạy lệnh trong settings.json và lấy dòng đầu của stdout.
 import { spawn } from 'node:child_process';
+import type { AgentMode } from './types.js';
 import { childEnv, resolveShell } from './tools.js';
 
 const STATUS_TIMEOUT_MS = 5000;
@@ -11,6 +12,7 @@ export type StatusLineInput = {
   version: string;
   model: string;
   effort?: string;
+  mode: AgentMode;
   cwd: string;
   tokens: { prompt: number; completion: number };
   busy: boolean;
