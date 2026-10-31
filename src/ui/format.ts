@@ -1,6 +1,8 @@
 // Định dạng số liệu hiển thị: token, thời gian, đường dẫn và khung spinner.
 import path from 'node:path';
 
+const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+
 // Khung hình spinner braille, gồm cả U+283C (BRAILLE PATTERN DOTS-346).
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -40,4 +42,15 @@ export function fitText(text: string, width: number): string {
   if (chars.length <= width) return text;
   if (width <= 1) return '…';
   return `${chars.slice(0, width - 1).join('')}…`;
+}
+
+// Đếm ký tự hiển thị sau khi bỏ mã màu ANSI.
+export function visibleWidth(text: string): number {
+  return [...text.replace(ANSI_PATTERN, '')].length;
+}
+
+// Ghép hai chuỗi và đệm khoảng trắng để chuỗi phải sát lề phải.
+export function padBetween(left: string, right: string, width: number, minGap = 2): string {
+  const gap = Math.max(minGap, width - visibleWidth(left) - visibleWidth(right));
+  return `${left}${' '.repeat(gap)}${right}`;
 }

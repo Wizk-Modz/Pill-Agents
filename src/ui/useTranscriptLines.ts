@@ -2,6 +2,9 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { itemToLines, type TranscriptItem } from './Transcript.js';
 import type { LineOwner } from './hitTest.js';
+import { visibleWidth } from './format.js';
+import { paintSegments } from './markdown.js';
+import { COLORS, GLYPHS } from './theme.js';
 
 export function useTranscriptLines(options: {
   items: TranscriptItem[];
@@ -37,9 +40,10 @@ export function useTranscriptLines(options: {
         cache.set(item.id, rendered);
       }
       const clickable = item.kind === 'thinking' || item.kind === 'tool';
+      const headerIndex = clickable ? rendered.findIndex((line) => line.length > 0) : -1;
       rendered.forEach((line, index) => {
         output.push(line);
-        lineOwners.push({ id: item.id, kind: item.kind, header: clickable && index === 0 });
+        lineOwners.push({ id: item.id, kind: item.kind, header: clickable && index === headerIndex });
       });
     }
 
@@ -52,13 +56,18 @@ export function useTranscriptLines(options: {
     }
     if (streaming) {
       const live = itemToLines({ id: -1, kind: 'assistant', text: streaming }, columns);
-      const body = live.slice(0, -1);
-      for (const line of body) {
+      // Gắn con trỏ vào cuối dòng cuối nếu còn chỗ, tránh che mất dòng vừa stream.
+      const cursor = paintSegments([{ text: ` ${GLYPHS.cursor}`, color: COLORS.accent }]);
+      const last = live[live.length - 1];
+      if (last !== undefined && visibleWidth(last) + 2 <= columns) {
+        live[live.length - 1] = last + cursor;
+      } else {
+        live.push(`  ${cursor}`);
+      }
+      for (const line of live) {
         output.push(line);
         lineOwners.push({ id: -1, kind: 'assistant', header: false });
       }
-      output.push('  ▌');
-      lineOwners.push({ id: -1, kind: 'assistant', header: false });
     }
     return { lines: output, owners: lineOwners };
   }, [items, streaming, thinkingLive, columns]);

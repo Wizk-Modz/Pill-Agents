@@ -1,15 +1,9 @@
-// Footer: trạng thái phiên, token, số tool, thời gian và gợi ý phím theo ngữ cảnh.
+// Footer: thông tin phiên, token, số tool, thời gian và gợi ý phím theo ngữ cảnh.
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { AgentMode } from '../types.js';
-import { SPINNER_FRAMES, formatElapsed, formatTokens } from './format.js';
-
-const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
-
-// Đếm ký tự hiển thị sau khi bỏ mã màu ANSI.
-function visibleLength(text: string): number {
-  return [...text.replace(ANSI_PATTERN, '')].length;
-}
+import { SPINNER_FRAMES, formatElapsed, formatTokens, visibleWidth } from './format.js';
+import { COLORS } from './theme.js';
 
 export function StatusBar({
   version,
@@ -21,6 +15,7 @@ export function StatusBar({
   elapsedMs,
   busy,
   queueCount,
+  bashTrusted,
   statusText,
   spinnerFrame,
   scrolledLines,
@@ -35,59 +30,84 @@ export function StatusBar({
   elapsedMs: number;
   busy: boolean;
   queueCount: number;
+  bashTrusted?: boolean;
   statusText?: string;
   spinnerFrame: number;
   scrolledLines: number;
   columns: number;
 }): React.ReactElement {
-  const parts: React.ReactNode[] = [];
-  let leftPlain = '';
+  type Metric = { text: string; node: React.ReactNode; optional: boolean };
+  const metrics: Metric[] = [];
+
   if (statusText) {
-    leftPlain = statusText;
-    parts.push(<Text key="custom">{statusText}</Text>);
+    metrics.push({ text: statusText, node: <Text key="custom">{statusText}</Text>, optional: false });
   } else {
-    // Header đã hiện model/effort; footer hẹp chỉ giữ phiên bản để nhường chỗ cho trạng thái.
-    const session = columns >= 100 ? `${version} · ${model}${effort ? ` · ${effort}` : ''}` : version;
-    leftPlain += session;
-    parts.push(<Text key="session">{session}</Text>);
+    const session = columns >= 110 ? `${version} · ${model}` : model;
+    metrics.push({ text: session, node: <Text key="session">{session}</Text>, optional: false });
+    if (effort && columns >= 80) {
+      metrics.push({
+        text: ` · ${effort}`,
+        node: (
+          <Text key="effort" dimColor>
+            {' '}
+            · {effort}
+          </Text>
+        ),
+        optional: false,
+      });
+    }
     if (tokens.last > 0) {
       const prompt = formatTokens(tokens.prompt);
       const completion = formatTokens(tokens.completion);
-      leftPlain += ` · ↑${prompt} ↓${completion}`;
-      parts.push(
-        <Text key="tokens">
-          {' · '}
-          <Text color="magenta">↑{prompt}</Text>
-          <Text dimColor> </Text>
-          <Text color="cyan">↓{completion}</Text>
-        </Text>,
-      );
+      metrics.push({
+        text: ` · ↑${prompt} ↓${completion}`,
+        node: (
+          <Text key="tokens">
+            {' '}
+            · <Text color={COLORS.accent}>↑{prompt}</Text>
+            <Text dimColor> ↓{completion}</Text>
+          </Text>
+        ),
+        optional: true,
+      });
     }
     if (toolCount > 0) {
       const text = ` · ${toolCount} tool`;
-      leftPlain += text;
-      parts.push(<Text key="tools">{text}</Text>);
+      metrics.push({ text, node: <Text key="tools">{text}</Text>, optional: true });
     }
     if (elapsedMs > 0) {
       const text = ` · ${formatElapsed(elapsedMs)}`;
-      leftPlain += text;
-      parts.push(<Text key="elapsed">{text}</Text>);
+      metrics.push({ text, node: <Text key="elapsed">{text}</Text>, optional: true });
     }
   }
+
+  const suffix: React.ReactNode[] = [];
+  let suffixText = '';
   if (busy) {
-    const text = ` · ${SPINNER_FRAMES[spinnerFrame] ?? '⠼'} đang xử lý (Esc huỷ)`;
-    leftPlain += text;
-    parts.push(
-      <Text key="busy" color="yellow">
+    const text = columns < 70
+      ? ` · ${SPINNER_FRAMES[spinnerFrame] ?? '⠼'} đang xử lý`
+      : ` · ${SPINNER_FRAMES[spinnerFrame] ?? '⠼'} đang xử lý (Esc huỷ)`;
+    suffixText += text;
+    suffix.push(
+      <Text key="busy" color={COLORS.warning}>
         {text}
       </Text>,
     );
   }
   if (queueCount > 0) {
-    const text = ` · ⏳ ${queueCount} chờ`;
-    leftPlain += text;
-    parts.push(
-      <Text key="queue" color="cyan">
+    const text = ` · ${queueCount} tin chờ`;
+    suffixText += text;
+    suffix.push(
+      <Text key="queue" color={COLORS.accent}>
+        {text}
+      </Text>,
+    );
+  }
+  if (bashTrusted) {
+    const text = columns < 72 ? ' · bash ✓' : ' · bash tự duyệt';
+    suffixText += text;
+    suffix.push(
+      <Text key="trust" color={COLORS.warning}>
         {text}
       </Text>,
     );
@@ -95,13 +115,25 @@ export function StatusBar({
 
   const right =
     scrolledLines > 0
-      ? `↑ đã cuộn ${scrolledLines} dòng · PageDown về cuối`
+      ? `↑ ${scrolledLines} dòng · PageDown`
       : busy
-        ? 'Esc huỷ'
-        : `Tab ${mode === 'plan' ? 'build' : 'plan'} · Enter gửi · /help`;
-  const rightLength = visibleLength(right);
-  const showRight = columns >= 64 && visibleLength(leftPlain) + rightLength + 4 <= columns;
-  const leftWidth = Math.max(10, columns - 2 - (showRight ? rightLength + 1 : 0));
+        ? ''
+        : columns >= 100
+          ? `Tab ${mode === 'plan' ? 'build' : 'plan'} · Enter gửi · /help`
+          : `Tab ${mode === 'plan' ? 'build' : 'plan'} · /help`;
+  const leftText = metrics.map((metric) => metric.text).join('') + suffixText;
+  const showRight =
+    right !== '' && columns >= 64 && visibleWidth(leftText) + visibleWidth(right) + 4 <= columns;
+  const leftWidth = Math.max(10, columns - 2 - (showRight ? visibleWidth(right) + 1 : 0));
+
+  // Bỏ bớt số liệu phụ từ cuối để spinner và số tin chờ luôn còn chỗ hiển thị.
+  const kept = [...metrics];
+  while (kept.length && visibleWidth(kept.map((metric) => metric.text).join('') + suffixText) > leftWidth) {
+    const index = kept.map((metric) => metric.optional).lastIndexOf(true);
+    if (index < 0) break;
+    kept.splice(index, 1);
+  }
+  const parts = [...kept.map((metric) => metric.node), ...suffix];
 
   return (
     <Box paddingX={1} flexShrink={0}>

@@ -51,13 +51,14 @@ Chi tiết: [docs/configuration.md](docs/configuration.md#pillmd).
 
 ## Giao diện
 
-Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 80×24):
+Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 80×24). Phong cách tối giản, một màu nhấn cyan (plan dùng tím), viền bo tròn và badge chế độ:
 
-- **Header**: phiên bản, chế độ (`PLAN`/`BUILD`), model, effort, thư mục và nhánh git; thu gọn khi hẹp.
-- **Welcome**: hiện khi phiên chưa có tin nhắn, kèm gợi ý lệnh.
-- **Transcript**: markdown, thinking, thẻ tool và diff; chỉ vùng này cuộn.
-- **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập, tối đa 3 tin xếp hàng hiển thị.
-- **Footer**: trạng thái phiên, token, số tool, thời gian và gợi ý phím theo ngữ cảnh.
+- **Header**: thương hiệu, badge `▐ BUILD ▌` / `▐ PLAN ▌`, thư mục và nhánh git; tự thu gọn khi hẹp.
+- **Welcome**: logo capsule, mô tả và gợi ý `/help`, `Tab`; chuyển bản gọn khi terminal thấp hoặc hẹp.
+- **Transcript**: tin nhắn `❯`, markdown, thinking `✻`, thẻ tool có icon + tên gốc, kết quả/diff nằm dưới rail `│`.
+- **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập; hiện tối đa 2 tin khi thấp, 3 tin khi cao; hộp duyệt có viền vàng, lệnh bash thường có thêm lựa chọn tự duyệt cả phiên.
+- **Ô nhập**: khung capsule với tiêu đề `nhập` / `plan` / `đang xử lý`.
+- **Footer**: model, effort, token, số tool, thời gian, trạng thái `bash tự duyệt` và gợi ý phím; số liệu phụ tự bỏ khi hẹp để spinner và số tin chờ luôn hiện.
 
 ## Phím tắt
 
@@ -75,18 +76,21 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 | `Ctrl+U` / `Ctrl+K` | Xoá từ đầu / đến cuối dòng |
 | `Ctrl+O` | Mở/đóng toàn bộ khối thinking |
 | `Ctrl+T` | Mở/đóng toàn bộ kết quả tool |
-| Click tiêu đề Thinking/tool | Mở/đóng riêng mục đó |
+| Click tiêu đề Suy nghĩ/tool | Mở/đóng riêng mục đó |
 | `d` (khi chờ duyệt) | Xem đầy đủ / thu gọn nội dung duyệt |
 | `y` / `n` (khi chờ duyệt) | Đồng ý / từ chối tool |
+| `a` (khi chờ duyệt bash thường) | Tự duyệt mọi lệnh bash còn lại trong phiên |
 | `Esc` | Huỷ lượt đang chạy; tin trong hàng đợi vẫn chạy tiếp |
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
 
 Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Bấm `Esc` để huỷ lượt đang chạy không xoá hàng đợi — tin kế tiếp vẫn được chạy. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
 
-Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Thinking** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `edit_file`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
+Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Suy nghĩ** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `edit_file`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
 
-Footer hiển thị phiên bản, token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; khi terminal đủ rộng (≥ 100 cột) footer hiện thêm model/effort, còn header luôn có các thông tin này. `/clear` đặt lại token về 0. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
+Khi agent chạy nhiều lệnh shell, hộp duyệt bash thường có thêm `[a]`: bấm `a` để tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lệnh nguy hiểm như `rm`, `sudo`, force push hay chạy script từ mạng **luôn** mở hộp duyệt và không hiện `[a]`. Khi bật, footer hiện `bash tự duyệt`; `/trust off` tắt ngay, `/clear` cũng tắt. Tự duyệt chỉ áp dụng cho `bash`, không áp dụng cho `write_file`/`edit_file`.
+
+Footer hiển thị model, effort (khi ≥ 80 cột), token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; phiên bản chỉ hiện khi terminal rộng (≥ 110 cột). Khi hẹp, footer tự bỏ bớt số tool/thời gian để spinner và số tin chờ luôn còn chỗ. `/clear` đặt lại token về 0. Khi bật tự duyệt bash, footer nối thêm `bash tự duyệt`. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; dưới 70 cột rút gọn còn `đang xử lý`. Khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
 
 Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), cấu hình `statusLine` trong `settings.json` — PillAgents chạy lệnh của bạn và lấy dòng đầu stdout:
 
@@ -101,7 +105,7 @@ Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), c�
 
 Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `mode`, `cwd`, `tokens`, `busy`, `queued`). Chi tiết và script mẫu: [docs/configuration.md](docs/configuration.md#dòng-trạng-thái-tự-cấu-hình).
 
-Lệnh: `/plan`, `/build`, `/mode`, `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
+Lệnh: `/plan`, `/build`, `/mode`, `/clear`, `/trust on|off`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 
 ## Chế độ plan và build
 
@@ -112,7 +116,7 @@ Giống OpenCode, PillAgents có hai chế độ:
 | `build` (mặc định) | Đủ 6 tool, ghi/sửa/chạy lệnh cần duyệt | Triển khai, sửa lỗi, chạy test |
 | `plan` | Chỉ `read_file`, `grep`, `glob` | Khảo sát code và lập kế hoạch trước khi sửa |
 
-Bấm `Tab` để đổi chế độ khi agent đang rảnh, hoặc dùng `/plan` / `/build`. Header hiện `PLAN` màu hồng hoặc `BUILD` màu xanh; `/mode` xem chế độ hiện tại. Hội thoại được giữ nguyên khi đổi chế độ.
+Bấm `Tab` để đổi chế độ khi agent đang rảnh, hoặc dùng `/plan` / `/build`. Header hiện badge `PLAN` màu tím hoặc `BUILD` màu cyan; `/mode` xem chế độ hiện tại. Hội thoại được giữ nguyên khi đổi chế độ.
 
 Ở chế độ `plan`, model không được cấp `write_file`, `edit_file` hay `bash`, và system prompt yêu cầu trả về kế hoạch thay vì tự sửa. Nếu model vẫn gọi tool bị khoá, agent từ chối và ghi lỗi vào hội thoại — không có thay đổi nào được thực hiện.
 

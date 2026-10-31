@@ -1,4 +1,4 @@
-// Giao diện kiểu Claude Code: header, transcript markdown, thẻ tool, xếp hàng và hộp duyệt.
+// Giao diện PillAgents: header capsule, transcript markdown, thẻ tool, xếp hàng và hộp duyệt.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, measureElement, useApp, useWindowSize, type DOMElement } from 'ink';
 import { Agent } from '../agent.js';
@@ -15,10 +15,11 @@ import { StatusBar } from './StatusBar.js';
 import { Welcome } from './Welcome.js';
 import { QueuePanel, queuePanelHeight } from './QueuePanel.js';
 import { ApprovalPanel } from './ApprovalPanel.js';
-import { buildApprovalLines } from './approval.js';
+import { buildApprovalLines, canAutoApproveBash, canTrustBash } from './approval.js';
 import { readGitBranch } from './git.js';
 import { hitTestColumn, hitTestLine } from './hitTest.js';
 import { SPINNER_FRAMES } from './format.js';
+import { COLORS, GLYPHS } from './theme.js';
 
 type PendingApproval = { call: ToolCall; resolve: (approved: boolean) => void };
 
@@ -43,6 +44,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const [busy, setBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [approvalExpanded, setApprovalExpanded] = useState(false);
+  const [bashTrusted, setBashTrusted] = useState(false);
   const [scrollTop, setScrollTop] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
@@ -65,6 +67,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   // useEffect, để tránh ghi đè bằng giá trị cũ khi có nhiều cập nhật trong cùng một frame.
   const pendingRef = useRef<PendingApproval | null>(null);
   const busyRef = useRef(false);
+  const bashTrustRef = useRef(false);
   const inputRef = useRef(input);
   const modeRef = useRef(config.mode);
   const scrollRef = useRef<number | null>(null);
@@ -86,6 +89,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
   const setPendingSync = useCallback((value: PendingApproval | null) => {
     pendingRef.current = value;
     setPendingApproval(value);
+  }, []);
+  const setBashTrustSync = useCallback((value: boolean) => {
+    bashTrustRef.current = value;
+    setBashTrusted(value);
   }, []);
   const setScrollSync = useCallback((value: number | null) => {
     scrollRef.current = value;
@@ -238,6 +245,12 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         },
         approve: (call: ToolCall) =>
           new Promise<boolean>((resolve) => {
+            // Lệnh bash thường đã được tin cậy trong phiên thì chạy luôn; lệnh nguy hiểm
+            // vẫn đi qua hộp duyệt vì canAutoApproveBash trả false.
+            if (canAutoApproveBash(call, bashTrustRef.current)) {
+              resolve(true);
+              return;
+            }
             setApprovalExpanded(false);
             setPendingSync({ call, resolve });
           }),
@@ -278,12 +291,17 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         return true;
       }
       if (command === '/clear') {
+        const wasTrusted = bashTrustRef.current;
         agent.reset();
         setItems([]);
         invalidate();
+        setBashTrustSync(false);
         setTokenUsage({ prompt: 0, completion: 0, last: 0 });
         setScrollSync(null);
-        pushItem({ kind: 'info', text: 'Đã xoá hội thoại.' });
+        pushItem({
+          kind: 'info',
+          text: wasTrusted ? 'Đã xoá hội thoại và tắt tự duyệt bash.' : 'Đã xoá hội thoại.',
+        });
         return true;
       }
       if (command === '/plan' || command === '/build') {
@@ -302,6 +320,31 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
           kind: 'info',
           text: `Chế độ hiện tại: ${modeRef.current === 'plan' ? 'plan (chỉ đọc)' : 'build (đầy đủ tool)'}`,
         });
+        return true;
+      }
+      if (command === '/trust') {
+        const value = rest.join(' ').trim().toLowerCase();
+        if (!value) {
+          pushItem({
+            kind: 'info',
+            text: `Tự duyệt bash: ${bashTrustRef.current ? 'bật' : 'tắt'}. Dùng /trust on|off để đổi.`,
+          });
+          return true;
+        }
+        if (value === 'on') {
+          setBashTrustSync(true);
+          pushItem({
+            kind: 'info',
+            text: 'Đã bật tự duyệt bash. Lệnh nguy hiểm vẫn hỏi; /trust off để tắt.',
+          });
+          return true;
+        }
+        if (value === 'off') {
+          setBashTrustSync(false);
+          pushItem({ kind: 'info', text: 'Đã tắt tự duyệt bash.' });
+          return true;
+        }
+        pushItem({ kind: 'error', text: `Giá trị không hợp lệ: ${value}. Dùng /trust on hoặc /trust off.` });
         return true;
       }
       if (command === '/model') {
@@ -335,14 +378,14 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • Tab đổi chế độ plan/build • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • Ctrl+D thoát • /plan /build /mode /clear /model /effort /help /exit',
+          text: 'Enter gửi • Tab đổi chế độ plan/build • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • a (khi chờ duyệt bash) tự duyệt cả phiên • Ctrl+D thoát • /plan /build /mode /clear /trust /model /effort /help /exit',
         });
         return true;
       }
       pushItem({ kind: 'error', text: `Lệnh không hỗ trợ: ${command}` });
       return true;
     },
-    [agent, config, exit, invalidate, pushItem, setMode, setScrollSync],
+    [agent, config, exit, invalidate, pushItem, setBashTrustSync, setMode, setScrollSync],
   );
 
   // Gửi tin nhắn: chạy ngay nếu rảnh, xếp hàng nếu đang bận.
@@ -477,15 +520,16 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
   const inputLines = countInputLines(input.value, input.cursor, columns, MAX_PROMPT_LINES);
   const suggestionHeight = suggestions.length ? suggestions.length + 1 : 0;
-  const queueHeight = queuePanelHeight(queue);
+  const queueLimit = rows >= 30 ? 3 : 2;
+  const queueHeight = queuePanelHeight(queue, queueLimit);
   const baseChromeHeight = HEADER_HEIGHT + queueHeight + suggestionHeight + inputLines + FOOTER_HEIGHT;
-  const approvalBudget = Math.max(4, rows - 3 - baseChromeHeight);
+  const approvalBudget = Math.max(4, rows - 3 - baseChromeHeight - 2);
   const approvalMaxPreview = Math.max(1, Math.min(approvalExpanded ? 24 : 8, approvalBudget - 4));
   const approvalLines = useMemo(
     () =>
       pendingApproval
         ? buildApprovalLines(pendingApproval.call, {
-            width: Math.max(20, columns - 2),
+            width: Math.max(10, columns - 4),
             expanded: approvalExpanded,
             cwd: config.cwd,
             maxPreview: approvalMaxPreview,
@@ -493,7 +537,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         : [],
     [pendingApproval, approvalExpanded, columns, config.cwd, approvalMaxPreview],
   );
-  const chromeHeight = baseChromeHeight + approvalLines.length;
+  const chromeHeight = baseChromeHeight + (pendingApproval ? approvalLines.length + 2 : 0);
   const viewportHeight = Math.max(3, rows - chromeHeight);
   const maxTop = Math.max(0, lines.length - viewportHeight);
   const top = scrollTop === null ? maxTop : Math.min(Math.max(0, scrollTop), maxTop);
@@ -540,18 +584,29 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         return;
       }
 
-      // Khi chờ duyệt: y/n/Esc trả lời, d mở rộng, mọi phím khác bị chặn để tránh gõ nhầm.
+      // Khi chờ duyệt: y/n/Esc trả lời, a tự duyệt bash, d mở rộng, phím khác bị chặn.
       if (pendingRef.current) {
         const text = event.type === 'key' ? event.char : event.type === 'text' ? event.text : '';
         const answer = text.toLowerCase();
         const escape = event.type === 'key' && event.key.escape;
         const plain = event.type === 'text' || (event.type === 'key' && !event.key.ctrl && !event.key.meta);
+        const entry = pendingRef.current;
         if (plain && answer === 'd') {
           setApprovalExpanded((current) => !current);
           return;
         }
+        if (plain && answer === 'a' && canTrustBash(entry.call)) {
+          setBashTrustSync(true);
+          setPendingSync(null);
+          setApprovalExpanded(false);
+          entry.resolve(true);
+          pushItem({
+            kind: 'info',
+            text: 'Đã bật tự duyệt bash. Lệnh nguy hiểm vẫn hỏi; /trust off để tắt.',
+          });
+          return;
+        }
         if (answer === 'y' || answer === 'n' || escape) {
-          const entry = pendingRef.current;
           setPendingSync(null);
           setApprovalExpanded(false);
           entry.resolve(answer === 'y');
@@ -648,7 +703,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       exit,
       handleClick,
       history,
+      pushItem,
       scrollBy,
+      setBashTrustSync,
+      setPendingSync,
       submit,
       suggestions,
       suggestionIndex,
@@ -668,8 +726,6 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       <Header
         version={version}
         mode={mode}
-        model={config.model}
-        effort={config.effort}
         cwd={config.cwd}
         branch={gitBranch}
         columns={columns}
@@ -677,7 +733,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
 
       <Box ref={transcriptRef} flexDirection="column" height={viewportHeight} flexShrink={0} overflow="hidden">
         {showWelcome ? (
-          <Welcome version={version} />
+          <Welcome version={version} columns={columns} rows={rows} />
         ) : (
           visible.map((line, index) => (
             <Text key={index} wrap="truncate-end">
@@ -687,8 +743,8 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         )}
       </Box>
 
-      {queue.length ? <QueuePanel queue={queue} /> : null}
-      {pendingApproval ? <ApprovalPanel lines={approvalLines} /> : null}
+      {queue.length ? <QueuePanel queue={queue} maxVisible={queueLimit} /> : null}
+      {pendingApproval ? <ApprovalPanel lines={approvalLines} columns={columns} /> : null}
 
       {suggestions.length ? (
         <Box flexDirection="column" paddingX={1} flexShrink={0}>
@@ -696,8 +752,10 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
             const active = command === activeSuggestion;
             return (
               <Text key={command.name} wrap="truncate-end">
-                <Text color={active ? 'cyan' : undefined} bold={active} inverse={active}>
-                  {' '}
+                <Text color={active ? COLORS.accent : undefined} bold={active}>
+                  {active ? `${GLYPHS.prompt} ` : '  '}
+                </Text>
+                <Text color={active ? COLORS.accent : undefined} bold={active}>
                   {command.name}
                 </Text>
                 <Text dimColor> {command.description}</Text>
@@ -734,6 +792,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
         elapsedMs={busy ? elapsedMs : 0}
         busy={busy}
         queueCount={queue.length}
+        bashTrusted={bashTrusted}
         statusText={statusText}
         spinnerFrame={spinnerFrame}
         scrolledLines={scrolledLines}

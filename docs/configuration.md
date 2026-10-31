@@ -131,7 +131,9 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 | `/plan` | Chuyển sang chế độ plan (chỉ đọc) |
 | `/build` | Chuyển sang chế độ build (đầy đủ tool) |
 | `/mode` | Xem chế độ hiện tại |
-| `/clear` | Xoá hội thoại, nạp lại PILL.md |
+| `/clear` | Xoá hội thoại, nạp lại PILL.md và tắt tự duyệt bash |
+| `/trust` | Xem trạng thái tự duyệt bash |
+| `/trust on` / `/trust off` | Bật/tắt tự duyệt bash cho phần còn lại của phiên |
 | `/model` | Xem model hiện tại |
 | `/model <tên>` | Đổi model cho phiên này |
 | `/effort` | Xem mức suy luận hiện tại |
@@ -140,6 +142,8 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 | `/exit`, `/quit` | Thoát |
 
 Lệnh không nhận diện được sẽ báo `Lệnh không hỗ trợ: <tên>`.
+
+Khi hộp duyệt đang mở: `y` chạy một lần, `n`/`Esc` từ chối, `d` mở rộng nội dung. Với lệnh `bash` thường, `a` bật tự duyệt mọi lệnh bash còn lại trong phiên; lựa chọn này không áp dụng cho `write_file`/`edit_file` và không áp dụng cho lệnh nguy hiểm (`rm`, `sudo`, force push, `curl | sh`…). Footer hiện `bash tự duyệt` khi bật; `/trust off` hoặc `/clear` tắt ngay.
 
 ## Chế độ plan và build
 
@@ -176,7 +180,7 @@ Hoặc trong `settings.json`:
 Footer hiển thị token đã dùng trong phiên:
 
 ```
-pill 0.1.0 · gpt-4o-mini · ↑1.2k ↓340
+pill 1.0.0 · gpt-4o-mini · ↑1.2k ↓340
 ```
 
 - `↑` — prompt token (nội dung gửi lên model)
@@ -199,13 +203,13 @@ Mặc định PillAgents tự dựng footer. Muốn hiển thị thông tin riê
 }
 ```
 
-Lệnh chạy lại khi trạng thái phiên đổi (model, effort, chế độ, token, đang xử lý, số tin chờ), gộp các lần đổi liền nhau trong 150ms. **Dòng đầu không rỗng** của stdout thay cho phần `pill 0.1.0 · model · effort · token`; phần spinner `đang xử lý` và `⏳ n chờ` vẫn nối phía sau. Mã màu ANSI trong stdout được giữ nguyên, nên script tự tô màu được.
+Lệnh chạy lại khi trạng thái phiên đổi (model, effort, chế độ, token, đang xử lý, số tin chờ), gộp các lần đổi liền nhau trong 150ms. **Dòng đầu không rỗng** của stdout thay cho phần thông tin phiên tự dựng (`model · effort · token · số tool · thời gian`); phần spinner `đang xử lý` và `n tin chờ` vẫn nối phía sau. Mã màu ANSI trong stdout được giữ nguyên, nên script tự tô màu được.
 
 Lệnh nhận JSON của phiên qua stdin:
 
 | Trường | Ý nghĩa |
 |---|---|
-| `version` | Chuỗi phiên bản, ví dụ `pill 0.1.0` |
+| `version` | Chuỗi phiên bản, ví dụ `pill 1.0.0` |
 | `model` | Model đang dùng |
 | `effort` | Mức suy luận, không có nếu chưa đặt |
 | `mode` | `build` hoặc `plan` |
@@ -249,7 +253,7 @@ Mọi endpoint tương thích OpenAI đều dùng được — chỉ cần đổ
 }
 ```
 
-DeepSeek phát `reasoning_content` — PillAgents hiển thị thành khối `✻ Thinking`.
+DeepSeek phát `reasoning_content` — PillAgents hiển thị thành khối `✻ Suy nghĩ` và tự thu gọn sau khi xong.
 
 **OpenRouter:**
 

@@ -8,6 +8,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: '/plan', description: 'Chuyển sang chế độ plan (chỉ đọc)' },
   { name: '/build', description: 'Chuyển sang chế độ build (đầy đủ tool)' },
   { name: '/mode', description: 'Xem chế độ hiện tại' },
+  { name: '/trust', description: 'Xem hoặc đổi tự duyệt bash: /trust on|off' },
   { name: '/clear', description: 'Xoá hội thoại và nạp lại PILL.md' },
   { name: '/model', description: 'Xem hoặc đổi model: /model <tên>' },
   { name: '/effort', description: 'Xem hoặc đổi mức effort: /effort <low|medium|high|xhigh|max>' },

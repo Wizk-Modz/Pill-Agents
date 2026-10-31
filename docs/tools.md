@@ -15,6 +15,12 @@ Agent tương tác với hệ thống qua 6 tool. Mỗi tool khai báo schema th
 
 Chỉ tool ghi hoặc thực thi mới cần duyệt; tool chỉ đọc chạy thẳng.
 
+## Duyệt tool
+
+Hộp duyệt hiện `y` (chạy một lần), `n`/`Esc` (từ chối), `d` (mở rộng nội dung). Riêng lệnh `bash` thường có thêm `a`: bật tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lựa chọn này chỉ áp dụng cho `bash`, không áp dụng cho `write_file`/`edit_file`.
+
+Các lệnh bị `isDangerousCommand()` đánh dấu — ví dụ `rm`, `sudo`, `git reset --hard`, force push, chạy script từ `curl | sh` — **luôn** mở hộp duyệt và không hiện `[a]`. `/trust on|off` xem hoặc đổi trạng thái tự duyệt; `/clear` cũng tắt. Khi bật, footer hiện `bash tự duyệt`.
+
 Ở chế độ `plan`, model chỉ được cấp `read_file`, `grep` và `glob`. Ba tool còn lại bị khoá; nếu model vẫn gọi, agent trả lỗi thay vì thực thi. Agent lọc tool ở cả danh sách gửi API lẫn lúc chạy, nên không thể vượt giới hạn bằng tool call tự phát.
 
 ## read_file
