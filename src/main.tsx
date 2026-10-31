@@ -4,7 +4,7 @@ import React from 'react';
 import { render } from 'ink';
 import { Agent } from './agent.js';
 import { AGENT_MODES, loadConfig, parseMode } from './config.js';
-import { createTools } from './tools.js';
+import { createTools, createToolState } from './tools.js';
 import { App } from './ui/App.js';
 import { VERSION } from './version.js';
 
@@ -145,8 +145,9 @@ function main(): void {
     fail(error instanceof Error ? error.message : String(error));
   }
 
-  const agent = new Agent(config, createTools(config.cwd));
-  const instance = render(<App agent={agent} config={config} version={`pill ${VERSION}`} />, {
+  const toolState = createToolState();
+  const agent = new Agent(config, createTools(config.cwd, toolState));
+  const instance = render(<App agent={agent} config={config} version={`pill ${VERSION}`} toolState={toolState} />, {
     alternateScreen: true,
     exitOnCtrlC: false,
   });

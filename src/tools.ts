@@ -1,6 +1,7 @@
 // Bộ tool cho agent: đọc/ghi/sửa file, chạy lệnh, grep và glob.
+// Tên tool và tham số theo quy ước của Claude Code: Read, Write, Edit, Glob dùng "file_path" tuyệt đối.
 import { execFile } from 'node:child_process';
-import { glob, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { glob, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -9,48 +10,98 @@ import type { ToolResult, ToolSpec } from './types.js';
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT = 30_000;
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', 'target', 'vendor']);
+// Read đọc tối đa 2000 dòng mỗi lần và cắt dòng dài hơn 2000 ký tự, giống Claude Code.
+const READ_MAX_LINES = 2000;
+const READ_MAX_LINE_CHARS = 2000;
+const GLOB_SCAN_LIMIT = 2000;
+const GLOB_MAX_RESULTS = 200;
+
+// Trạng thái dùng chung giữa các tool trong một phiên: file đã đọc để chặn ghi đè mù.
+export type ToolState = {
+  readFiles: Set<string>;
+};
+
+// Tạo trạng thái rỗng cho một phiên làm việc.
+export function createToolState(): ToolState {
+  return { readFiles: new Set() };
+}
 
 // Cắt output dài để không làm ngập context của model.
 function clip(text: string): string {
   return text.length > MAX_OUTPUT ? `${text.slice(0, MAX_OUTPUT)}\n...[đã cắt bớt]` : text;
 }
 
-// Chuẩn hoá đường dẫn tương đối theo thư mục làm việc.
-function resolvePath(cwd: string, input: unknown): string {
-  if (typeof input !== 'string' || !input.trim()) throw new Error('Thiếu tham số "path".');
-  return path.resolve(cwd, input);
+// Chuẩn hoá đường dẫn tuyệt đối; từ chối đường dẫn tương đối để model không đoán sai thư mục.
+function requireAbsolutePath(input: unknown, name = 'file_path'): string {
+  if (typeof input !== 'string' || !input.trim()) throw new Error(`Thiếu tham số "${name}".`);
+  if (!path.isAbsolute(input)) {
+    throw new Error(`"${name}" phải là đường dẫn tuyệt đối; nhận được "${input}".`);
+  }
+  return path.resolve(input);
 }
 
-// Đọc file kèm số dòng, hỗ trợ offset và limit.
-async function readFileTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const filePath = resolvePath(cwd, args.path);
+// Lấy thông tin file, trả undefined nếu không tồn tại.
+async function statIfExists(filePath: string): Promise<Awaited<ReturnType<typeof stat>> | undefined> {
+  try {
+    return await stat(filePath);
+  } catch {
+    return undefined;
+  }
+}
+
+// Đọc file kèm số dòng theo dạng cat -n, hỗ trợ offset và limit.
+async function readTool(cwd: string, args: Record<string, unknown>, state: ToolState): Promise<ToolResult> {
+  const filePath = requireAbsolutePath(args.file_path);
+  const info = await statIfExists(filePath);
+  if (info?.isDirectory()) throw new Error(`"${filePath}" là thư mục; Read chỉ đọc được file.`);
   const content = await readFile(filePath, 'utf8');
+  state.readFiles.add(filePath);
+
+  if (!content) return { content: '(file rỗng)' };
+
   const lines = content.split('\n');
   const offset = Math.max(1, Number(args.offset) || 1);
-  const limit = Math.max(1, Number(args.limit) || 2000);
+  const limit = Math.max(1, Number(args.limit) || READ_MAX_LINES);
   const selected = lines.slice(offset - 1, offset - 1 + limit);
-  const numbered = selected.map((line, index) => `${offset + index}\t${line}`).join('\n');
-  const suffix = offset - 1 + limit < lines.length ? `\n...[còn ${lines.length - offset - limit + 1} dòng]` : '';
-  return { content: clip(numbered + suffix) };
+  const numbered = selected.map((line, index) => {
+    // Dòng quá dài bị cắt để một file minified không chiếm hết context.
+    const shown =
+      line.length > READ_MAX_LINE_CHARS ? `${line.slice(0, READ_MAX_LINE_CHARS)}… [dòng bị cắt]` : line;
+    return `${String(offset + index).padStart(6, ' ')}\t${shown}`;
+  });
+  const shownTo = offset - 1 + selected.length;
+  const suffix = shownTo < lines.length ? `\n...[còn ${lines.length - shownTo} dòng]` : '';
+  return { content: clip(numbered.join('\n') + suffix) };
 }
 
 // Ghi đè toàn bộ nội dung file, tạo thư mục cha nếu cần.
-async function writeFileTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const filePath = resolvePath(cwd, args.path);
+async function writeTool(args: Record<string, unknown>, state: ToolState): Promise<ToolResult> {
+  const filePath = requireAbsolutePath(args.file_path);
   if (typeof args.content !== 'string') throw new Error('Thiếu tham số "content".');
+  const info = await statIfExists(filePath);
+  if (info?.isDirectory()) throw new Error(`"${filePath}" là thư mục, không ghi đè được.`);
+  // Ghi đè file đang có mà chưa đọc lần nào là cách chắc chắn nhất để mất nội dung.
+  if (info && !state.readFiles.has(filePath)) {
+    throw new Error(`Chưa đọc ${filePath} trong phiên này; dùng Read trước khi ghi đè.`);
+  }
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, args.content, 'utf8');
+  state.readFiles.add(filePath);
   return { content: `Đã ghi ${filePath} (${args.content.length} ký tự).` };
 }
 
 // Thay thế chuỗi chính xác trong file, lỗi nếu không khớp hoặc khớp nhiều lần.
-async function editFileTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const filePath = resolvePath(cwd, args.path);
+async function editTool(args: Record<string, unknown>, state: ToolState): Promise<ToolResult> {
+  const filePath = requireAbsolutePath(args.file_path);
   const oldString = args.old_string;
   const newString = args.new_string;
   if (typeof oldString !== 'string' || !oldString) throw new Error('Thiếu tham số "old_string".');
   if (typeof newString !== 'string') throw new Error('Thiếu tham số "new_string".');
+  if (oldString === newString) throw new Error('"new_string" phải khác "old_string".');
   const content = await readFile(filePath, 'utf8');
+  if (!state.readFiles.has(filePath)) {
+    throw new Error(`Chưa đọc ${filePath} trong phiên này; dùng Read trước khi sửa.`);
+  }
   const occurrences = content.split(oldString).length - 1;
   if (occurrences === 0) throw new Error('Không tìm thấy "old_string" trong file.');
   if (occurrences > 1 && !args.replace_all) {
@@ -106,18 +157,32 @@ async function bashTool(cwd: string, args: Record<string, unknown>, signal: Abor
   }
 }
 
-// Tìm file theo glob, bỏ qua thư mục nặng và giới hạn số kết quả.
+// Tìm file theo glob, bỏ qua thư mục nặng, sắp theo thời gian sửa mới nhất.
 async function globTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
   if (typeof args.pattern !== 'string' || !args.pattern.trim()) throw new Error('Thiếu tham số "pattern".');
+  const base = args.path === undefined ? cwd : requireAbsolutePath(args.path, 'path');
   const matches: string[] = [];
-  for await (const entry of glob(args.pattern, { cwd })) {
+  for await (const entry of glob(args.pattern, { cwd: base })) {
     const normalized = entry.replaceAll('\\', '/');
     if (normalized.split('/').some((part) => SKIP_DIRS.has(part))) continue;
     matches.push(normalized);
-    if (matches.length >= 200) break;
+    if (matches.length >= GLOB_SCAN_LIMIT) break;
   }
-  matches.sort();
-  return { content: matches.length ? matches.join('\n') : 'Không tìm thấy file phù hợp.' };
+  if (!matches.length) return { content: 'Không tìm thấy file phù hợp.' };
+
+  // Sắp theo mtime giảm dần để file vừa sửa hiện trước, giống Claude Code.
+  const dated = await Promise.all(
+    matches.map(async (relative) => {
+      const full = path.join(base, relative);
+      const info = await statIfExists(full);
+      return { full, mtime: Number(info?.mtimeMs ?? 0) };
+    }),
+  );
+  dated.sort((a, b) => b.mtime - a.mtime || a.full.localeCompare(b.full));
+  const shown = dated.slice(0, GLOB_MAX_RESULTS).map((entry) => entry.full);
+  const hidden = dated.length - shown.length;
+  const suffix = hidden > 0 ? `\n...[còn ${hidden} file]` : '';
+  return { content: clip(shown.join('\n') + suffix) };
 }
 
 // Quét nội dung file bằng regex, ưu tiên ripgrep nếu có sẵn.
@@ -177,52 +242,55 @@ export async function grepFallback(cwd: string, args: Record<string, unknown>): 
 }
 
 // Tạo danh sách tool kèm schema tham số.
-export function createTools(cwd: string): ToolSpec[] {
+export function createTools(cwd: string, state: ToolState = createToolState()): ToolSpec[] {
   return [
     {
-      name: 'read_file',
-      description: 'Đọc file kèm số dòng. Dùng offset/limit cho file dài.',
+      name: 'Read',
+      description:
+        'Đọc file kèm số dòng. "file_path" phải là đường dẫn tuyệt đối. Mặc định đọc 2000 dòng đầu; dùng offset/limit cho file dài.',
       needsApproval: false,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Đường dẫn file' },
+          file_path: { type: 'string', description: 'Đường dẫn tuyệt đối tới file' },
           offset: { type: 'number', description: 'Dòng bắt đầu (1-based)' },
           limit: { type: 'number', description: 'Số dòng tối đa' },
         },
-        required: ['path'],
+        required: ['file_path'],
       },
-      run: (args) => readFileTool(cwd, args),
+      run: (args) => readTool(cwd, args, state),
     },
     {
-      name: 'write_file',
-      description: 'Ghi đè toàn bộ nội dung file, tạo thư mục cha nếu cần.',
+      name: 'Write',
+      description:
+        'Ghi đè toàn bộ nội dung file, tạo thư mục cha nếu cần. "file_path" phải tuyệt đối. File đang có phải được Read trước.',
       needsApproval: true,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Đường dẫn file' },
+          file_path: { type: 'string', description: 'Đường dẫn tuyệt đối tới file' },
           content: { type: 'string', description: 'Nội dung đầy đủ' },
         },
-        required: ['path', 'content'],
+        required: ['file_path', 'content'],
       },
-      run: (args) => writeFileTool(cwd, args),
+      run: (args) => writeTool(args, state),
     },
     {
-      name: 'edit_file',
-      description: 'Thay thế chuỗi chính xác trong file; dùng replace_all khi muốn thay mọi chỗ.',
+      name: 'Edit',
+      description:
+        'Thay thế chuỗi chính xác trong file; phải Read file trước. "old_string" phải duy nhất, hoặc dùng replace_all để thay mọi chỗ.',
       needsApproval: true,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Đường dẫn file' },
+          file_path: { type: 'string', description: 'Đường dẫn tuyệt đối tới file' },
           old_string: { type: 'string', description: 'Chuỗi cần thay' },
-          new_string: { type: 'string', description: 'Chuỗi thay thế' },
+          new_string: { type: 'string', description: 'Chuỗi thay thế, phải khác old_string' },
           replace_all: { type: 'boolean', description: 'Thay tất cả lần xuất hiện' },
         },
-        required: ['path', 'old_string', 'new_string'],
+        required: ['file_path', 'old_string', 'new_string'],
       },
-      run: (args) => editFileTool(cwd, args),
+      run: (args) => editTool(args, state),
     },
     {
       name: 'bash',
@@ -254,13 +322,15 @@ export function createTools(cwd: string): ToolSpec[] {
       run: (args) => grepTool(cwd, args),
     },
     {
-      name: 'glob',
-      description: 'Liệt kê file khớp pattern, ví dụ **/*.ts.',
+      name: 'Glob',
+      description:
+        'Liệt kê file khớp pattern, ví dụ **/*.ts, sắp theo thời gian sửa mới nhất. Dùng "path" để đổi thư mục gốc (tuyệt đối).',
       needsApproval: false,
       parameters: {
         type: 'object',
         properties: {
           pattern: { type: 'string', description: 'Glob pattern' },
+          path: { type: 'string', description: 'Thư mục gốc tuyệt đối, mặc định là thư mục làm việc' },
         },
         required: ['pattern'],
       },

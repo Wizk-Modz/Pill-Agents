@@ -7,7 +7,7 @@ import { streamChat } from './llm.js';
 import type { Config } from './config.js';
 import type { AgentMode, ChatMessage, ToolCall, ToolResult, ToolSpec, Usage } from './types.js';
 
-const PLAN_TOOLS = new Set(['read_file', 'grep', 'glob']);
+const PLAN_TOOLS = new Set(['Read', 'grep', 'Glob']);
 
 export type AgentHandlers = {
   onAssistantStart: () => void;
@@ -37,21 +37,22 @@ export function buildSystemPrompt(cwd: string, mode: AgentMode = 'build'): strin
   const toolSection = plan
     ? [
         '## Tool đang có',
-        '- read_file, grep, glob: chỉ đọc, không cần duyệt.',
-        '- write_file, edit_file, bash bị khoá ở chế độ plan.',
-        '- Đọc file trước khi kết luận; dùng glob và grep để định vị file thay vì quét toàn bộ dự án.',
+        '- Read, grep, Glob: chỉ đọc, không cần duyệt.',
+        '- Write, Edit, bash bị khoá ở chế độ plan.',
+        '- Đọc file trước khi kết luận; dùng Glob và grep để định vị file thay vì quét toàn bộ dự án.',
         '- Tham chiếu code theo dạng đường_dẫn:dòng để người dùng mở đúng chỗ.',
       ]
     : [
         '## Tool đang có',
-        '- read_file, grep, glob: chỉ đọc, không cần duyệt.',
-        '- write_file, edit_file, bash: cần người dùng duyệt trước khi chạy.',
-        '- Dùng read_file, grep và glob cho việc đọc hoặc tìm kiếm; chỉ dùng bash cho build, test, git hoặc lệnh hệ thống thật sự cần thiết.',
+        '- Read, grep, Glob: chỉ đọc, không cần duyệt.',
+        '- Write, Edit, bash: cần người dùng duyệt trước khi chạy.',
+        '- Read, Write, Edit nhận "file_path" là đường dẫn tuyệt đối; Glob nhận "path" tuyệt đối nếu cần đổi thư mục gốc.',
+        '- Dùng Read, grep và Glob cho việc đọc hoặc tìm kiếm; chỉ dùng bash cho build, test, git hoặc lệnh hệ thống thật sự cần thiết.',
         '- Không chạy lại lệnh vừa chạy nếu không có thay đổi liên quan.',
         '- Gọi song song các tool độc lập trong cùng một lượt; tool phụ thuộc nhau thì gọi tuần tự.',
-        '- Đọc file trước khi sửa; không sửa dựa trên phỏng đoán nội dung.',
-        '- Ưu tiên edit_file với chuỗi chính xác; chuỗi khớp nhiều lần thì mở rộng ngữ cảnh hoặc dùng replace_all.',
-        '- Dùng glob và grep để định vị file thay vì quét toàn bộ dự án.',
+        '- Đọc file trước khi sửa; Write và Edit từ chối file chưa đọc trong phiên, nên đừng đoán nội dung.',
+        '- Ưu tiên Edit với chuỗi chính xác; chuỗi khớp nhiều lần thì mở rộng ngữ cảnh hoặc dùng replace_all.',
+        '- Dùng Glob và grep để định vị file thay vì quét toàn bộ dự án.',
         '- Sau khi sửa, chạy build, lint và test có sẵn của dự án. Không kiểm chứng được (ví dụ giao diện) thì nói rõ là chưa kiểm chứng.',
         '- Tham chiếu code theo dạng đường_dẫn:dòng để người dùng mở đúng chỗ.',
       ];

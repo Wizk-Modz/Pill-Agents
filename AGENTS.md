@@ -144,7 +144,7 @@ hoặc khi toggle thinking/tool. `useTranscriptLines.ts` dựng song song bản 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 102 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 107 test:
 
 | File | Nội dung |
 |---|---|
@@ -175,7 +175,7 @@ TUI cần terminal thật, không test tự động được. Kiểm tra thủ c
 | Kích thước | 80×24 và 120×40, resize qua lại không tràn footer |
 | Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → `↳ n tin đang chờ`; bấm `Esc`, lượt hiện tại dừng nhưng tin chờ vẫn chạy tiếp |
 | Thinking | Cần mock trả `reasoning_content` |
-| Diff | Cần mock trả `edit_file` |
+| Diff | Cần mock trả `Edit` |
 | Gợi ý lệnh | Gõ `/`, dùng `Tab`/`↑↓` |
 | Token | Footer hiện `↑N ↓N` sau mỗi lượt |
 

@@ -1,6 +1,6 @@
 // Kiểm thử tool file và input reducer bằng assert.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -13,52 +13,123 @@ async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   try {
     await run(dir);
   } finally {
+    toolCache.delete(dir);
     await rm(dir, { recursive: true, force: true });
   }
 }
 
-// Lấy tool theo tên.
+// Cache bộ tool theo thư mục để mọi lần gọi trong một test dùng chung trạng thái đã đọc.
+const toolCache = new Map<string, ReturnType<typeof createTools>>();
+
+// Lấy tool theo tên, giữ nguyên danh sách của thư mục.
 function tool(dir: string, name: string) {
-  const found = createTools(dir).find((item) => item.name === name);
+  let list = toolCache.get(dir);
+  if (!list) {
+    list = createTools(dir);
+    toolCache.set(dir, list);
+  }
+  const found = list.find((item) => item.name === name);
   assert.ok(found, `thiếu tool ${name}`);
   return found;
 }
 
-test('write_file rồi read_file trả đúng nội dung', async () => {
+test('Write rồi Read trả đúng nội dung', async () => {
   await withTempDir(async (dir) => {
-    const write = tool(dir, 'write_file');
-    const read = tool(dir, 'read_file');
+    const write = tool(dir, 'Write');
+    const read = tool(dir, 'Read');
     const signal = new AbortController().signal;
-    await write.run({ path: 'a/b.txt', content: 'xin chào' }, signal);
-    const result = await read.run({ path: 'a/b.txt' }, signal);
+    const target = path.join(dir, 'a/b.txt');
+    await write.run({ file_path: target, content: 'xin chào' }, signal);
+    const result = await read.run({ file_path: target }, signal);
     assert.match(result.content, /xin chào/);
-    assert.equal(await readFile(path.join(dir, 'a/b.txt'), 'utf8'), 'xin chào');
+    assert.equal(await readFile(target, 'utf8'), 'xin chào');
   });
 });
 
-test('edit_file từ chối chuỗi khớp nhiều lần', async () => {
+test('Read, Write và Edit từ chối đường dẫn tương đối', async () => {
   await withTempDir(async (dir) => {
-    await writeFile(path.join(dir, 'x.txt'), 'a a a', 'utf8');
-    const edit = tool(dir, 'edit_file');
-    await assert.rejects(() => edit.run({ path: 'x.txt', old_string: 'a', new_string: 'b' }, new AbortController().signal), /3 lần/);
+    const signal = new AbortController().signal;
+    await assert.rejects(() => tool(dir, 'Read').run({ file_path: 'a.txt' }, signal), /tuyệt đối/);
+    await assert.rejects(() => tool(dir, 'Write').run({ file_path: 'a.txt', content: 'x' }, signal), /tuyệt đối/);
+    await assert.rejects(
+      () => tool(dir, 'Edit').run({ file_path: 'a.txt', old_string: 'a', new_string: 'b' }, signal),
+      /tuyệt đối/,
+    );
   });
 });
 
-test('edit_file thay toàn bộ khi replace_all', async () => {
+test('Write và Edit từ chối file chưa đọc trong phiên', async () => {
   await withTempDir(async (dir) => {
-    await writeFile(path.join(dir, 'x.txt'), 'a a', 'utf8');
-    const edit = tool(dir, 'edit_file');
-    await edit.run({ path: 'x.txt', old_string: 'a', new_string: 'b', replace_all: true }, new AbortController().signal);
-    assert.equal(await readFile(path.join(dir, 'x.txt'), 'utf8'), 'b b');
+    const target = path.join(dir, 'x.txt');
+    await writeFile(target, 'nội dung cũ', 'utf8');
+    const signal = new AbortController().signal;
+    await assert.rejects(() => tool(dir, 'Write').run({ file_path: target, content: 'mới' }, signal), /Chưa đọc/);
+    await assert.rejects(
+      () => tool(dir, 'Edit').run({ file_path: target, old_string: 'cũ', new_string: 'mới' }, signal),
+      /Chưa đọc/,
+    );
+    // Đọc xong thì cả hai chạy được.
+    await tool(dir, 'Read').run({ file_path: target }, signal);
+    await tool(dir, 'Edit').run({ file_path: target, old_string: 'cũ', new_string: 'mới' }, signal);
+    assert.equal(await readFile(target, 'utf8'), 'nội dung mới');
   });
 });
 
-test('edit_file giữ nguyên new_string có ký tự $ đặc biệt của String.replace', async () => {
+test('Edit từ chối khi new_string trùng old_string', async () => {
   await withTempDir(async (dir) => {
-    await writeFile(path.join(dir, 'x.txt'), 'echo A\n', 'utf8');
-    const edit = tool(dir, 'edit_file');
-    await edit.run({ path: 'x.txt', old_string: 'A', new_string: 'B$&C$1$\'`' }, new AbortController().signal);
-    assert.equal(await readFile(path.join(dir, 'x.txt'), 'utf8'), 'echo B$&C$1$\'`\n');
+    const target = path.join(dir, 'x.txt');
+    await writeFile(target, 'a', 'utf8');
+    const signal = new AbortController().signal;
+    await tool(dir, 'Read').run({ file_path: target }, signal);
+    await assert.rejects(
+      () => tool(dir, 'Edit').run({ file_path: target, old_string: 'a', new_string: 'a' }, signal),
+      /phải khác/,
+    );
+  });
+});
+
+test('Read cắt dòng dài hơn 2000 ký tự', async () => {
+  await withTempDir(async (dir) => {
+    const target = path.join(dir, 'dai.txt');
+    await writeFile(target, `${'x'.repeat(2500)}\ndòng hai`, 'utf8');
+    const result = await tool(dir, 'Read').run({ file_path: target }, new AbortController().signal);
+    assert.match(result.content, /dòng bị cắt/);
+    assert.match(result.content, /dòng hai/);
+  });
+});
+
+test('Edit từ chối chuỗi khớp nhiều lần', async () => {
+  await withTempDir(async (dir) => {
+    const target = path.join(dir, 'x.txt');
+    await writeFile(target, 'a a a', 'utf8');
+    const signal = new AbortController().signal;
+    await tool(dir, 'Read').run({ file_path: target }, signal);
+    await assert.rejects(
+      () => tool(dir, 'Edit').run({ file_path: target, old_string: 'a', new_string: 'b' }, signal),
+      /3 lần/,
+    );
+  });
+});
+
+test('Edit thay toàn bộ khi replace_all', async () => {
+  await withTempDir(async (dir) => {
+    const target = path.join(dir, 'x.txt');
+    await writeFile(target, 'a a', 'utf8');
+    const signal = new AbortController().signal;
+    await tool(dir, 'Read').run({ file_path: target }, signal);
+    await tool(dir, 'Edit').run({ file_path: target, old_string: 'a', new_string: 'b', replace_all: true }, signal);
+    assert.equal(await readFile(target, 'utf8'), 'b b');
+  });
+});
+
+test('Edit giữ nguyên new_string có ký tự $ đặc biệt của String.replace', async () => {
+  await withTempDir(async (dir) => {
+    const target = path.join(dir, 'x.txt');
+    await writeFile(target, 'echo A\n', 'utf8');
+    const signal = new AbortController().signal;
+    await tool(dir, 'Read').run({ file_path: target }, signal);
+    await tool(dir, 'Edit').run({ file_path: target, old_string: 'A', new_string: 'B$&C$1$\'`' }, signal);
+    assert.equal(await readFile(target, 'utf8'), 'echo B$&C$1$\'`\n');
   });
 });
 
@@ -101,11 +172,11 @@ test('childEnv bổ sung thư mục tạm khi môi trường cha thiếu', () =>
   assert.equal(childEnv({ TMPDIR: '' }).TMPDIR, tmpdir(), 'thay cả giá trị rỗng');
 });
 
-test('glob và grep tìm đúng file', async () => {
+test('Glob và grep tìm đúng file', async () => {
   await withTempDir(async (dir) => {
     await writeFile(path.join(dir, 'a.ts'), 'const needle = 1;', 'utf8');
     await writeFile(path.join(dir, 'b.js'), 'needle', 'utf8');
-    const glob = tool(dir, 'glob');
+    const glob = tool(dir, 'Glob');
     const grep = tool(dir, 'grep');
     const signal = new AbortController().signal;
     const globResult = await glob.run({ pattern: '*.ts' }, signal);
@@ -116,8 +187,32 @@ test('glob và grep tìm đúng file', async () => {
   });
 });
 
-test('grep tìm được pattern bắt đầu bằng dấu gạch ngang', async () => {
+test('Glob sắp theo thời gian sửa mới nhất và nhận path tuyệt đối', async () => {
   await withTempDir(async (dir) => {
+    const sub = path.join(dir, 'sub');
+    await mkdir(sub, { recursive: true });
+    const older = path.join(sub, 'cu.ts');
+    const newer = path.join(sub, 'moi.ts');
+    await writeFile(older, '', 'utf8');
+    await writeFile(newer, '', 'utf8');
+    // Đặt mtime cách nhau để thứ tự không phụ thuộc độ phân giải của hệ tệp.
+    const past = new Date(Date.now() - 60_000);
+    await utimes(older, past, past);
+    const result = await tool(dir, 'Glob').run(
+      { pattern: '*.ts', path: sub },
+      new AbortController().signal,
+    );
+    const lines = result.content.split('\n');
+    assert.equal(lines[0], newer, 'file mới sửa phải đứng trước');
+    assert.equal(lines[1], older);
+    await assert.rejects(
+      () => tool(dir, 'Glob').run({ pattern: '*.ts', path: 'sub' }, new AbortController().signal),
+      /tuyệt đối/,
+    );
+  });
+});
+
+test('grep tìm được pattern bắt đầu bằng dấu gạch ngang', async () => {  await withTempDir(async (dir) => {
     await writeFile(path.join(dir, 'co.txt'), 'dòng có -ok trong đó', 'utf8');
     const grep = tool(dir, 'grep');
     const result = await grep.run({ pattern: '-ok' }, new AbortController().signal);

@@ -78,7 +78,7 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-102 test, bao gồm:
+107 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
@@ -91,7 +91,7 @@ npm test
 | Cấu hình | đọc `PILL_MODE`/`mode`, chấp nhận build/plan, bỏ giá trị lạ |
 | Trạng thái | đọc `statusLine`, lấy dòng đầu stdout, JSON gửi qua stdin (gồm `mode`), thư mục chạy, timeout, lệnh lỗi |
 | Diff | nhận diện dòng thay đổi, thêm/bớt, giới hạn và đánh dấu truncated, hai chuỗi rỗng |
-| UI | format token/thời gian/đường dẫn, đo độ rộng ANSI, hit-test chuột, phát hiện lệnh nguy hiểm, hộp duyệt `edit_file`/`bash`/ghi đè (ngắt dòng lệnh dài), thẻ tool có thời gian và thống kê căn phải, header badge/thu gọn, footer tự bỏ số liệu phụ, ô nhập capsule, welcome đầy đủ/gọn, bảng hàng đợi giới hạn theo chiều cao |
+| UI | format token/thời gian/đường dẫn, đo độ rộng ANSI, hit-test chuột, phát hiện lệnh nguy hiểm, hộp duyệt `Edit`/`bash`/ghi đè (ngắt dòng lệnh dài), thẻ tool có thời gian và thống kê căn phải, header badge/thu gọn, footer tự bỏ số liệu phụ, ô nhập capsule, welcome đầy đủ/gọn, bảng hàng đợi giới hạn theo chiều cao |
 
 Test không cần API key — không nhóm nào gọi mạng.
 
@@ -138,13 +138,13 @@ Mock trả về:
 | Welcome | Mở TUI khi chưa gửi gì — thấy tên phiên, mô tả và gợi ý lệnh |
 | Header | Badge `PLAN`/`BUILD`, thư mục, nhánh git; thu gọn khi terminal hẹp |
 | Chế độ | Bấm `Tab`: badge header đổi `PLAN`/`BUILD`, viền và tiêu đề prompt đổi màu, placeholder đổi; `/plan`, `/build`, `/mode` hoạt động. Đang chạy thì `Tab` bị bỏ qua |
-| Plan chỉ đọc | Ở chế độ plan, model chỉ được cấp `read_file`/`grep`/`glob`; thử mock trả `write_file` — phải thấy lỗi `bị khoá ở chế độ plan` và file không được tạo |
+| Plan chỉ đọc | Ở chế độ plan, model chỉ được cấp `Read`/`grep`/`Glob`; thử mock trả `Write` — phải thấy lỗi `bị khoá ở chế độ plan` và file không được tạo |
 | Kích thước | Chạy ở 80×24 rồi kéo rộng 120×40 — không tràn footer, transcript tự co |
 | Gõ nhanh không mất ký tự | Gõ liên tục 30+ ký tự |
 | History | Gửi tin, bấm `↑` — phải hiện lại tin cũ, **không** hiện `^[[A` |
 | Cuộn | `PageUp`/`PageDown`, lăn chuột; footer báo `↑ N dòng · PageDown` |
 | Duyệt tool | Gửi "chạy lệnh", bấm `y`; thử `n`, `Esc`, và `d` để mở rộng |
-| Diff khi duyệt | Mock trả `edit_file` — hộp duyệt phải hiện `+N −M`, dòng thêm/xoá đúng màu |
+| Diff khi duyệt | Mock trả `Edit` — hộp duyệt phải hiện `+N −M`, dòng thêm/xoá đúng màu |
 | Thẻ tool | Sau khi chạy, thẻ hiện thời gian, số dòng/kết quả, `exit N` với bash |
 | Mở rộng tool | Click tiêu đề thẻ hoặc `Ctrl+T`; marker đổi `▸`/`▾` |
 | Thinking | Mock trả `reasoning_content`; click tiêu đề hoặc `Ctrl+O` để mở/đóng |
@@ -156,7 +156,7 @@ Mock trả về:
 | Markdown khối | Cho mock trả code fence có dòng thụt lề và dòng rất dài, tiêu đề `#`..`######`, quote `> > >` — code phải cắt đúng khung và không tô màu, sáu cấp tiêu đề phải khác nhau, quote phải hiện vạch theo cấp |
 | Spinner | Gửi "chạy lệnh" rồi để hộp duyệt mở — footer phải đổi khung braille liên tục, dừng khi lượt kết thúc |
 
-Mock chính chỉ trả text thường và tool `bash`. Muốn kiểm thinking hoặc diff, sửa tạm `test/mock-server.mjs` để trả `reasoning_content` hoặc tool call `edit_file` (nhớ tạo file đích trước khi duyệt).
+Mock chính chỉ trả text thường và tool `bash`. Muốn kiểm thinking hoặc diff, sửa tạm `test/mock-server.mjs` để trả `reasoning_content` hoặc tool call `Edit` (nhớ tạo file đích trước khi duyệt).
 
 ## Thêm provider
 
@@ -176,6 +176,7 @@ if (extras.reasoning_content) options.onReasoning?.(extras.reasoning_content);
 - **File > 300 dòng**: cân nhắc tách module
 - **Giao diện**: ưu tiên `COLORS`/`GLYPHS` trong `src/ui/theme.ts`; không hardcode mã màu mới rải rác
 - **Tool mới**: khai báo trong `createTools()`, xem [tools.md](tools.md#thêm-tool-mới)
+- **Tool file**: giữ tên và tham số theo Claude Code (`Read`/`Write`/`Edit` dùng `file_path` tuyệt đối); tool ghi phải kiểm tra `ToolState.readFiles` trước khi đụng file đang có
 
 ## Gỡ lỗi
 

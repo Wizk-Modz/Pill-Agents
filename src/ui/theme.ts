@@ -29,12 +29,12 @@ export const GLYPHS = {
 } as const;
 
 const TOOL_ICONS: Record<string, string> = {
-  read_file: '▤',
-  write_file: '✎',
-  edit_file: '±',
+  Read: '▤',
+  Write: '✎',
+  Edit: '±',
   bash: '$',
   grep: '≡',
-  glob: '◇',
+  Glob: '◇',
 };
 
 // Trả icon một ô cho tên tool, dùng bullet nếu tool lạ.

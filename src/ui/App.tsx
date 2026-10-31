@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, measureElement, useApp, useWindowSize, type DOMElement } from 'ink';
 import { Agent } from '../agent.js';
 import { EFFORT_LEVELS, parseEffort, type Config } from '../config.js';
+import type { ToolState } from '../tools.js';
 import type { AgentMode, ToolCall, ToolResult, Usage } from '../types.js';
 import { runStatusLine, type StatusLineInput } from '../statusline.js';
 import { InputBox, countInputLines, reduceInput, reduceString, type InputState } from './InputBox.js';
@@ -32,7 +33,17 @@ const HEADER_HEIGHT = 2;
 const FOOTER_HEIGHT = 1;
 
 // Màn hình chính của PillAgents.
-export function App({ agent, config, version }: { agent: Agent; config: Config; version: string }): React.ReactElement {
+export function App({
+  agent,
+  config,
+  version,
+  toolState,
+}: {
+  agent: Agent;
+  config: Config;
+  version: string;
+  toolState: ToolState;
+}): React.ReactElement {
   const { exit } = useApp();
   const size = useWindowSize();
   const columns = Math.max(20, size.columns || 80);
@@ -293,6 +304,7 @@ export function App({ agent, config, version }: { agent: Agent; config: Config; 
       if (command === '/clear') {
         const wasTrusted = bashTrustRef.current;
         agent.reset();
+        toolState.readFiles.clear();
         setItems([]);
         invalidate();
         setBashTrustSync(false);

@@ -40,10 +40,10 @@ export function summarizeToolCall(call: ToolCall): string {
       return String(args.command ?? '');
     case 'grep':
       return `${args.pattern ?? ''}${args.path ? ` trong ${args.path}` : ''}`;
-    case 'glob':
-      return String(args.pattern ?? '');
+    case 'Glob':
+      return `${args.pattern ?? ''}${args.path ? ` trong ${args.path}` : ''}`;
     default:
-      return String(args.path ?? '');
+      return String(args.file_path ?? '');
   }
 }
 
@@ -67,9 +67,9 @@ export function clipToolResult(
   return shown;
 }
 
-// Tính diff của edit_file từ tham số, trả undefined nếu thiếu chuỗi.
+// Tính diff của Edit từ tham số, trả undefined nếu thiếu chuỗi.
 function editDiff(call: ToolCall): DiffResult | undefined {
-  if (call.name !== 'edit_file') return undefined;
+  if (call.name !== 'Edit') return undefined;
   const args = parseArgs(call);
   if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') return undefined;
   return diffLines(args.old_string, args.new_string, 400);
@@ -83,12 +83,12 @@ function toolStats(item: Extract<ItemBody, { kind: 'tool' }>, diff: DiffResult |
   if (result.meta?.durationMs !== undefined) parts.push(formatDuration(result.meta.durationMs));
   if (diff && !result.isError) {
     parts.push(`+${diff.added} −${diff.removed}`);
-  } else if (!result.isError && item.call.name === 'read_file') {
+  } else if (!result.isError && item.call.name === 'Read') {
     parts.push(`${result.content.split('\n').length} dòng`);
-  } else if (!result.isError && (item.call.name === 'grep' || item.call.name === 'glob')) {
+  } else if (!result.isError && (item.call.name === 'grep' || item.call.name === 'Glob')) {
     const count = result.content.split('\n').filter(Boolean).length;
     parts.push(`${count} kết quả`);
-  } else if (item.call.name === 'write_file') {
+  } else if (item.call.name === 'Write') {
     const args = parseArgs(item.call);
     if (typeof args.content === 'string') parts.push(`${args.content.split('\n').length} dòng`);
   }

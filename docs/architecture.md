@@ -24,7 +24,7 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 | `src/instructions.ts` | Nạp `PILL.md` global + project | 64 |
 | `src/types.ts` | Kiểu dữ liệu dùng chung, chế độ agent, metadata UI của tool | 38 |
 | `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 153 |
-| `src/tools.ts` | 6 tool: đọc/ghi/sửa file, bash, grep, glob | 270 |
+| `src/tools.ts` | 6 tool theo quy ước Claude Code: `Read`/`Write`/`Edit`/`Glob`, `bash`, `grep` | 340 |
 | `src/agent.ts` | Vòng lặp agent, chọn tool theo chế độ, quản lý hội thoại, lưu phiên | 314 |
 | `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 72 |
 | `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn, tự duyệt bash | 803 |
@@ -62,7 +62,19 @@ const viewportHeight = Math.max(3, rows - chromeHeight);
 
 Nhờ vậy hộp duyệt co phần xem trước theo số dòng còn trống (cộng thêm 2 dòng viền), còn transcript luôn giữ ít nhất 3 dòng và không đẩy footer khỏi màn hình. Header cao 2 dòng (nội dung + đường kẻ), footer một dòng; nội dung dài bị cắt bằng `fitText()` hoặc `wrap="truncate-end"`. Bảng hàng đợi cao tối đa 4 dòng: tiêu đề, 2 tin khi `rows < 30` (3 tin khi cao hơn), và dòng `… +N tin` nếu còn.
 
-`Header` đọc nhánh git một lần lúc khởi động (`readGitBranch()`), lỗi hoặc detached HEAD thì bỏ qua. `Welcome` chỉ hiện khi chưa có item, không streaming và không có thinking trực tiếp; logo capsule đầy đủ ở màn hình cao, bản gọn khi `rows < 22` hoặc `columns < 64`. Mỗi mục transcript mở đầu bằng một dòng trống để tách nhịp; thẻ tool hiển thị header một dòng (trạng thái, icon, tên gốc, tóm tắt, thống kê căn phải) và phần thân thu gọn/mở rộng nằm dưới rail `│`; `edit_file` thay phần thân bằng diff.
+`Header` đọc nhánh git một lần lúc khởi động (`readGitBranch()`), lỗi hoặc detached HEAD thì bỏ qua. `Welcome` chỉ hiện khi chưa có item, không streaming và không có thinking trực tiếp; logo capsule đầy đủ ở màn hình cao, bản gọn khi `rows < 22` hoặc `columns < 64`. Mỗi mục transcript mở đầu bằng một dòng trống để tách nhịp; thẻ tool hiển thị header một dòng (trạng thái, icon, tên gốc, tóm tắt, thống kê căn phải) và phần thân thu gọn/mở rộng nằm dưới rail `│`; `Edit` thay phần thân bằng diff.
+
+## Quy ước tool kiểu Claude Code
+
+`Read`, `Write`, `Edit` và `Glob` đặt tên cùng tham số `file_path` như Claude Code, để model đã quen bộ tool đó không phải học lại cách gọi. `bash` và `grep` giữ tên cũ.
+
+Ba điểm hành vi đi kèm:
+
+- **Đường dẫn tuyệt đối** — `requireAbsolutePath()` từ chối đường dẫn tương đối cho `Read`, `Write`, `Edit` và `path` của `Glob`. Trước đây `resolvePath()` tự resolve theo `cwd`, nên model có thể ghi nhầm thư mục khi làm việc với nhiều dự án.
+- **Read trước khi Write/Edit** — `ToolState.readFiles` là `Set` đường dẫn đã `Read` thành công trong phiên; `Write`/`Edit` từ chối file đang có mà chưa nằm trong `Set`. Chốt chặn này nằm ở tool, không chỉ ở system prompt, nên model không thể ghi đè mù nội dung nó chưa thấy. `/clear` xoá `Set` cùng hội thoại.
+- **Read cắt theo dòng** — mỗi lần đọc tối đa 2000 dòng và cắt dòng dài hơn 2000 ký tự, để file minified không chiếm hết context.
+
+`createTools(cwd, state)` nhận `ToolState` từ `main.tsx` và truyền xuống `App`, nên trạng thái sống suốt phiên chứ không mất khi React render lại.
 
 ## Metadata tool
 
@@ -114,7 +126,7 @@ const tools = toolsForMode(this.tools, mode);
 this.messages[0] = { role: 'system', content: this.prompts[mode] };
 ```
 
-`plan` chỉ giữ `read_file`, `grep`, `glob`. `runToolCalls()` dùng đúng map tool đã gửi model; nếu model vẫn gọi `write_file`/`edit_file`/`bash`, agent ghi kết quả lỗi `Tool ... bị khoá ở chế độ plan.` vào hội thoại và **không chạy** tool. Nhờ vậy giới hạn được thực thi ở agent, không chỉ ẩn khỏi danh sách gửi API.
+`plan` chỉ giữ `Read`, `grep`, `Glob`. `runToolCalls()` dùng đúng map tool đã gửi model; nếu model vẫn gọi `Write`/`Edit`/`bash`, agent ghi kết quả lỗi `Tool ... bị khoá ở chế độ plan.` vào hội thoại và **không chạy** tool. Nhờ vậy giới hạn được thực thi ở agent, không chỉ ẩn khỏi danh sách gửi API.
 
 App giữ `modeRef`/`mode` giống các cặp state khác. `Tab` đổi chế độ khi agent rảnh; `/plan` và `/build` đổi trực tiếp. Hội thoại và token giữ nguyên khi đổi; chế độ hiện tại được đưa vào header, footer và `StatusLineInput`, đồng thời lưu vào file phiên.
 
@@ -264,9 +276,9 @@ Cache bị xoá khi: đổi độ rộng terminal (kiểm tra ngay trong `useMem
 
 - So khớp dòng để đánh dấu `context`, `add`, `remove`
 - Giới hạn số dòng (mặc định 400) và đặt cờ `truncated`
-- Dùng cho thẻ `edit_file` và hộp duyệt tool
+- Dùng cho thẻ `Edit` và hộp duyệt tool
 
-Diff chỉ để hiển thị. Nội dung tool gửi model vẫn là kết quả gốc của `edit_file`, không bị cắt theo diff.
+Diff chỉ để hiển thị. Nội dung tool gửi model vẫn là kết quả gốc của `Edit`, không bị cắt theo diff.
 
 ## Cấu hình
 
@@ -302,7 +314,7 @@ Không hardcode đường dẫn POSIX:
 
 Prompt nền đứng trước phần PILL.md nạp ở mục dưới, nên quy tắc riêng của dự án luôn thắng.
 
-Ở chế độ `plan`, mục **Tool đang có** chỉ liệt kê ba tool đọc và nêu rõ `write_file`/`edit_file`/`bash` bị khoá; prompt có thêm mục **Chế độ plan** yêu cầu trả về mục tiêu, file liên quan, các bước, rủi ro và cách kiểm chứng. Cả hai prompt dùng chung phần PILL.md đã nạp.
+Ở chế độ `plan`, mục **Tool đang có** chỉ liệt kê ba tool đọc và nêu rõ `Write`/`Edit`/`bash` bị khoá; prompt có thêm mục **Chế độ plan** yêu cầu trả về mục tiêu, file liên quan, các bước, rủi ro và cách kiểm chứng. Cả hai prompt dùng chung phần PILL.md đã nạp.
 
 ## PILL.md
 

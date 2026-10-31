@@ -143,7 +143,7 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 
 Lệnh không nhận diện được sẽ báo `Lệnh không hỗ trợ: <tên>`.
 
-Khi hộp duyệt đang mở: `y` chạy một lần, `n`/`Esc` từ chối, `d` mở rộng nội dung. Với lệnh `bash` thường, `a` bật tự duyệt mọi lệnh bash còn lại trong phiên; lựa chọn này không áp dụng cho `write_file`/`edit_file` và không áp dụng cho lệnh nguy hiểm (`rm`, `sudo`, force push, `curl | sh`…). Footer hiện `bash tự duyệt` khi bật; `/trust off` hoặc `/clear` tắt ngay.
+Khi hộp duyệt đang mở: `y` chạy một lần, `n`/`Esc` từ chối, `d` mở rộng nội dung. Với lệnh `bash` thường, `a` bật tự duyệt mọi lệnh bash còn lại trong phiên; lựa chọn này không áp dụng cho `Write`/`Edit` và không áp dụng cho lệnh nguy hiểm (`rm`, `sudo`, force push, `curl | sh`…). Footer hiện `bash tự duyệt` khi bật; `/trust off` hoặc `/clear` tắt ngay.
 
 ## Chế độ plan và build
 
@@ -152,7 +152,7 @@ PillAgents có hai chế độ, lấy cảm hứng từ OpenCode:
 | Chế độ | Tool được cấp | Hành vi |
 |---|---|---|
 | `build` | Cả 6 tool | Sửa file, chạy lệnh; tool ghi/exec vẫn cần duyệt |
-| `plan` | `read_file`, `grep`, `glob` | Chỉ khảo sát và trả kế hoạch; không sửa file, không chạy lệnh |
+| `plan` | `Read`, `grep`, `Glob` | Chỉ khảo sát và trả kế hoạch; không sửa file, không chạy lệnh |
 
 Đổi chế độ bằng `Tab` khi agent đang rảnh, hoặc `/plan` / `/build`. Chế độ hiện tại hiện ở header (`PLAN`/`BUILD`) và trong dữ liệu gửi `statusLine`. Hội thoại, lịch sử và token được giữ nguyên khi đổi chế độ; `/clear` cũng không đổi chế độ.
 
@@ -173,7 +173,7 @@ Hoặc trong `settings.json`:
 }
 ```
 
-Ở chế độ plan, agent chốt danh sách tool tại đầu mỗi lượt. Nếu model vẫn gọi `write_file`, `edit_file` hoặc `bash`, agent trả lỗi `Tool ... bị khoá ở chế độ plan.` và không thực thi. Đổi chế độ giữa lượt đang chạy không có hiệu lực cho tới lượt sau.
+Ở chế độ plan, agent chốt danh sách tool tại đầu mỗi lượt. Nếu model vẫn gọi `Write`, `Edit` hoặc `bash`, agent trả lỗi `Tool ... bị khoá ở chế độ plan.` và không thực thi. Đổi chế độ giữa lượt đang chạy không có hiệu lực cho tới lượt sau.
 
 ## Token usage
 

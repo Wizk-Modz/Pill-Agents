@@ -115,7 +115,7 @@ function diffPreview(diff: DiffResult, width: number, maxLines: number): string[
   return output.slice(0, maxLines);
 }
 
-// Render diff của edit_file từ hai chuỗi tham số.
+// Render diff của Edit từ hai chuỗi tham số.
 function editDiff(args: Record<string, unknown>): DiffResult | undefined {
   if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') return undefined;
   return diffLines(args.old_string, args.new_string, 400);
@@ -182,8 +182,8 @@ export function buildApprovalLines(
       );
     }
     lines.push(...textPreview(command, width, '  $ ', { color: 'white' }, maxPreview, '    '));
-  } else if (call.name === 'edit_file') {
-    const filePath = typeof args.path === 'string' ? args.path : '';
+  } else if (call.name === 'Edit') {
+    const filePath = typeof args.file_path === 'string' ? args.file_path : '';
     const diff = editDiff(args);
     const stats = diff ? ` · +${diff.added} −${diff.removed}` : '';
     lines.push(
@@ -205,8 +205,8 @@ export function buildApprovalLines(
     } else {
       lines.push(paintSegments([{ text: '  (thiếu old_string hoặc new_string)', color: 'red' }]));
     }
-  } else if (call.name === 'write_file') {
-    const filePath = typeof args.path === 'string' ? args.path : '';
+  } else if (call.name === 'Write') {
+    const filePath = typeof args.file_path === 'string' ? args.file_path : '';
     const content = typeof args.content === 'string' ? args.content : '';
     const lineCount = content ? content.split('\n').length : 0;
     lines.push(

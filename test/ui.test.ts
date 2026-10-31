@@ -110,18 +110,18 @@ test('canAutoApproveBash chỉ duyệt lệnh bash thường khi phiên đã tin
   const dangerous = call('bash', { command: 'rm -rf build' });
   assert.equal(canTrustBash(normal), true);
   assert.equal(canTrustBash(dangerous), false);
-  assert.equal(canTrustBash(call('edit_file', { path: 'a.ts' })), false);
+  assert.equal(canTrustBash(call('Edit', { file_path: '/du-an/a.ts' })), false);
   assert.equal(canTrustBash(call('bash', {})), false);
   assert.equal(canTrustBash({ id: 'x', name: 'bash', arguments: '{' }), false);
   assert.equal(canAutoApproveBash(normal, false), false);
   assert.equal(canAutoApproveBash(normal, true), true);
   assert.equal(canAutoApproveBash(dangerous, true), false);
-  assert.equal(canAutoApproveBash(call('edit_file', { path: 'a.ts' }), true), false);
+  assert.equal(canAutoApproveBash(call('Edit', { file_path: '/du-an/a.ts' }), true), false);
 });
 
-test('buildApprovalLines hiện diff edit_file và nút duyệt', () => {
+test('buildApprovalLines hiện diff Edit và nút duyệt', () => {
   const lines = buildApprovalLines(
-    call('edit_file', { path: 'a.ts', old_string: 'const a = 1;', new_string: 'const a = 2;' }),
+    call('Edit', { file_path: '/du-an/a.ts', old_string: 'const a = 1;', new_string: 'const a = 2;' }),
     { width: 80, expanded: false, cwd: process.cwd(), maxPreview: 8 },
   );
   const text = lines.join('\n');
@@ -144,8 +144,9 @@ test('buildApprovalLines cảnh báo lệnh nguy hiểm và file ghi đè', asyn
   assert.ok(bash.length <= 4 + 4);
 
   await withTempDir(async (dir) => {
-    await writeFile(path.join(dir, 'a.txt'), 'cũ', 'utf8');
-    const write = buildApprovalLines(call('write_file', { path: 'a.txt', content: 'mới' }), {
+    const target = path.join(dir, 'a.txt');
+    await writeFile(target, 'cũ', 'utf8');
+    const write = buildApprovalLines(call('Write', { file_path: target, content: 'mới' }), {
       width: 80,
       expanded: false,
       cwd: dir,
@@ -158,13 +159,13 @@ test('buildApprovalLines cảnh báo lệnh nguy hiểm và file ghi đè', asyn
 
 test('buildApprovalLines mở rộng hiện nhiều dòng hơn bản thu gọn', () => {
   const content = Array.from({ length: 30 }, (_, index) => `dòng ${index + 1}`).join('\n');
-  const compact = buildApprovalLines(call('write_file', { path: 'a.txt', content }), {
+  const compact = buildApprovalLines(call('Write', { file_path: '/du-an/a.txt', content }), {
     width: 80,
     expanded: false,
     cwd: process.cwd(),
     maxPreview: 6,
   });
-  const expanded = buildApprovalLines(call('write_file', { path: 'a.txt', content }), {
+  const expanded = buildApprovalLines(call('Write', { file_path: '/du-an/a.txt', content }), {
     width: 80,
     expanded: true,
     cwd: process.cwd(),
@@ -185,7 +186,7 @@ test('buildApprovalLines chỉ mời tự duyệt bash cho lệnh thường', ()
   assert.ok(dangerous.includes('duyệt thủ công'));
 
   const edit = buildApprovalLines(
-    call('edit_file', { path: 'a.ts', old_string: 'a', new_string: 'b' }),
+    call('Edit', { file_path: '/du-an/a.ts', old_string: 'a', new_string: 'b' }),
     options,
   ).map(plain).join('\n');
   assert.ok(!edit.includes('[a]'));
@@ -212,25 +213,25 @@ test('itemToLines hiện thẻ tool có thời gian, thống kê và marker mở
     {
       id: 1,
       kind: 'tool',
-      call: call('read_file', { path: 'a.ts' }),
+      call: call('Read', { file_path: '/du-an/a.ts' }),
       result: { content: 'một\ndòng', meta: { durationMs: 500 } },
       expanded: false,
     },
     80,
   );
   const text = plain(lines.join('\n'));
-  assert.ok(text.includes('read_file'));
+  assert.ok(text.includes('Read'));
   assert.ok(text.includes('500ms'));
   assert.ok(text.includes('2 dòng'));
   assert.ok(text.includes('▸'));
 });
 
-test('itemToLines hiện diff edit_file khi mở rộng', () => {
+test('itemToLines hiện diff Edit khi mở rộng', () => {
   const lines = itemToLines(
     {
       id: 2,
       kind: 'tool',
-      call: call('edit_file', { path: 'a.ts', old_string: 'cũ', new_string: 'mới' }),
+      call: call('Edit', { file_path: '/du-an/a.ts', old_string: 'cũ', new_string: 'mới' }),
       result: { content: 'Đã sửa', meta: { durationMs: 1200 } },
       expanded: true,
     },
@@ -355,14 +356,14 @@ test('itemToLines không vượt quá độ rộng terminal', () => {
     {
       id: 6,
       kind: 'tool',
-      call: call('read_file', { path: 'a.ts' }),
+      call: call('Read', { file_path: '/du-an/a.ts' }),
       result: { content: 'dòng nội dung '.repeat(40), meta: { durationMs: 500 } },
       expanded: true,
     },
     {
       id: 7,
       kind: 'tool',
-      call: call('edit_file', { path: 'a.ts', old_string: 'cũ '.repeat(30), new_string: 'mới '.repeat(30) }),
+      call: call('Edit', { file_path: '/du-an/a.ts', old_string: 'cũ '.repeat(30), new_string: 'mới '.repeat(30) }),
       result: { content: 'Đã sửa', meta: { durationMs: 1200 } },
       expanded: true,
     },
@@ -379,7 +380,7 @@ test('thẻ tool có dòng trống đầu và căn thống kê về lề phải'
     {
       id: 8,
       kind: 'tool',
-      call: call('read_file', { path: 'a.ts' }),
+      call: call('Read', { file_path: '/du-an/a.ts' }),
       result: { content: 'một\ndòng', meta: { durationMs: 500 } },
     },
     80,

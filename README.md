@@ -86,9 +86,9 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 
 Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Bấm `Esc` để huỷ lượt đang chạy không xoá hàng đợi — tin kế tiếp vẫn được chạy. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
 
-Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Suy nghĩ** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `edit_file`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
+Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Suy nghĩ** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `Edit`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
 
-Khi agent chạy nhiều lệnh shell, hộp duyệt bash thường có thêm `[a]`: bấm `a` để tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lệnh nguy hiểm như `rm`, `sudo`, force push hay chạy script từ mạng **luôn** mở hộp duyệt và không hiện `[a]`. Khi bật, footer hiện `bash tự duyệt`; `/trust off` tắt ngay, `/clear` cũng tắt. Tự duyệt chỉ áp dụng cho `bash`, không áp dụng cho `write_file`/`edit_file`.
+Khi agent chạy nhiều lệnh shell, hộp duyệt bash thường có thêm `[a]`: bấm `a` để tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lệnh nguy hiểm như `rm`, `sudo`, force push hay chạy script từ mạng **luôn** mở hộp duyệt và không hiện `[a]`. Khi bật, footer hiện `bash tự duyệt`; `/trust off` tắt ngay, `/clear` cũng tắt. Tự duyệt chỉ áp dụng cho `bash`, không áp dụng cho `Write`/`Edit`.
 
 Footer hiển thị model, effort (khi ≥ 80 cột), token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; phiên bản chỉ hiện khi terminal rộng (≥ 110 cột). Khi hẹp, footer tự bỏ bớt số tool/thời gian để spinner và số tin chờ luôn còn chỗ. `/clear` đặt lại token về 0. Khi bật tự duyệt bash, footer nối thêm `bash tự duyệt`. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; dưới 70 cột rút gọn còn `đang xử lý`. Khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
 
@@ -114,11 +114,11 @@ Giống OpenCode, PillAgents có hai chế độ:
 | Chế độ | Tool | Dùng khi |
 |---|---|---|
 | `build` (mặc định) | Đủ 6 tool, ghi/sửa/chạy lệnh cần duyệt | Triển khai, sửa lỗi, chạy test |
-| `plan` | Chỉ `read_file`, `grep`, `glob` | Khảo sát code và lập kế hoạch trước khi sửa |
+| `plan` | Chỉ `Read`, `grep`, `Glob` | Khảo sát code và lập kế hoạch trước khi sửa |
 
 Bấm `Tab` để đổi chế độ khi agent đang rảnh, hoặc dùng `/plan` / `/build`. Header hiện badge `PLAN` màu tím hoặc `BUILD` màu cyan; `/mode` xem chế độ hiện tại. Hội thoại được giữ nguyên khi đổi chế độ.
 
-Ở chế độ `plan`, model không được cấp `write_file`, `edit_file` hay `bash`, và system prompt yêu cầu trả về kế hoạch thay vì tự sửa. Nếu model vẫn gọi tool bị khoá, agent từ chối và ghi lỗi vào hội thoại — không có thay đổi nào được thực hiện.
+Ở chế độ `plan`, model không được cấp `Write`, `Edit` hay `bash`, và system prompt yêu cầu trả về kế hoạch thay vì tự sửa. Nếu model vẫn gọi tool bị khoá, agent từ chối và ghi lỗi vào hội thoại — không có thay đổi nào được thực hiện.
 
 Đặt chế độ mặc định bằng `--mode plan`, biến `PILL_MODE` hoặc `mode` trong `settings.json`. Chế độ hiện tại cũng được lưu vào file phiên.
 
@@ -126,14 +126,16 @@ Bấm `Tab` để đổi chế độ khi agent đang rảnh, hoặc dùng `/plan
 
 | Tool | Cần duyệt | Mô tả |
 |---|---|---|
-| `read_file` | Không | Đọc file kèm số dòng |
-| `write_file` | Có | Ghi đè file, tạo thư mục cha |
-| `edit_file` | Có | Thay chuỗi chính xác |
+| `Read` | Không | Đọc file kèm số dòng |
+| `Write` | Có | Ghi đè file, tạo thư mục cha |
+| `Edit` | Có | Thay chuỗi chính xác |
 | `bash` | Có | Chạy lệnh shell |
 | `grep` | Không | Tìm theo regex (ripgrep, fallback Node) |
-| `glob` | Không | Liệt kê file theo pattern |
+| `Glob` | Không | Liệt kê file theo pattern |
 
-Ở chế độ `plan`, chỉ ba tool đọc (`read_file`, `grep`, `glob`) được cấp cho model. Phiên được lưu tại `~/.pill/sessions/`.
+Ở chế độ `plan`, chỉ ba tool đọc (`Read`, `grep`, `Glob`) được cấp cho model. Phiên được lưu tại `~/.pill/sessions/`.
+
+Tên `Read`, `Write`, `Edit`, `Glob` và tham số `file_path` theo quy ước của Claude Code. Ba tool file **bắt buộc** đường dẫn tuyệt đối, và `Write`/`Edit` từ chối file chưa được `Read` trong phiên để không ghi đè mù. Chi tiết: [docs/tools.md](docs/tools.md#phải-read-trước-khi-writeedit).
 
 ## Test
 
