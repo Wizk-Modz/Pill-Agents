@@ -85,7 +85,7 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
 
-Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Bấm `Esc` để huỷ lượt đang chạy không xoá hàng đợi — tin kế tiếp vẫn được chạy. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
+Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong bảng ngay trên ô nhập và tự động chạy sau khi lượt hiện tại xong. Bấm `Esc` để huỷ lượt đang chạy không xoá hàng đợi — tin kế tiếp vẫn được chạy. `Esc` dừng được cả khi tool đang chạy dở: `Glob`/`grep` kiểm tra tín hiệu huỷ trong lúc quét nên không phải chờ quét xong. Lệnh gạch chéo xếp hàng cũng được thực thi như lệnh, không gửi cho model. Click trong lúc hộp duyệt đang mở bị bỏ qua; `Shift+click` vẫn dành cho chọn văn bản.
 
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Suy nghĩ** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `Edit`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
 

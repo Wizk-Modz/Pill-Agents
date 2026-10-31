@@ -105,6 +105,10 @@ Lệnh thoát khác 0 **không** ném lỗi mà trả `isError: true` kèm stdou
 
 Output giới hạn 30.000 ký tự; vượt sẽ cắt và ghi `...[đã cắt bớt]`.
 
+## Huỷ giữa chừng
+
+Mọi tool đều nhận `AbortSignal` của lượt và kiểm tra nó trong lúc chạy, nên `Esc` dừng được cả khi tool đang quét dở — không phải chờ tool xong mới thoát. Trước đây chỉ `bash` nhận `signal`; `Glob`/`grep` quét thư mục lớn thì `Esc` không có tác dụng và giao diện đứng ở trạng thái "đang xử lý". Tool bị huỷ ném `Đã huỷ bởi người dùng.` để agent ghi kết quả lỗi và đóng lượt gọn gàng.
+
 ## grep
 
 Tìm nội dung theo regex, trả về `đường_dẫn:số_dòng:nội_dung`.
@@ -128,7 +132,11 @@ pattern  Glob pattern, ví dụ "**/*.ts"
 path     Thư mục gốc tuyệt đối (mặc định là thư mục làm việc)
 ```
 
-Tự bỏ qua `node_modules`, `.git`, `dist`, `.next`, `target`, `vendor`. Giới hạn 200 kết quả, **sắp theo thời gian sửa mới nhất** (file vừa đụng hiện trước) — giống Claude Code. Trả đường dẫn tuyệt đối để dùng lại trực tiếp cho `Read`/`Edit`.
+Tự bỏ qua `node_modules`, `.git`, `dist`, `.next`, `target`, `vendor` và cả thư mục hệ thống như `proc`, `sys`, `dev`, `run`, `snap` — quét từ gốc `/` mà không lọc thì gần như không bao giờ xong. Việc lọc dùng tùy chọn `exclude` của `fs.glob` nên thư mục nặng không bị duyệt vào, không phải duyệt hết rồi mới bỏ.
+
+Giới hạn 200 kết quả, **sắp theo thời gian sửa mới nhất** (file vừa đụng hiện trước) — giống Claude Code. Trả đường dẫn tuyệt đối để dùng lại trực tiếp cho `Read`/`Edit`.
+
+Tool quét có trần **10 giây**. Hết giờ thì trả kết quả đã tìm được kèm ghi chú `...[dừng sau 10s, chưa quét hết]` để model biết danh sách chưa đầy đủ, thay vì treo im lặng. `grep` cũng có cùng trần và cùng cách báo.
 
 ## Giới hạn chung
 

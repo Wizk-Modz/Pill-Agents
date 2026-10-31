@@ -78,11 +78,11 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-111 test, bao gồm:
+113 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
-| Tool | ghi/đọc file, edit từ chối khớp nhiều lần, bash trả lỗi không ném kèm `exitCode`, glob/grep, pattern bắt đầu bằng `-`, shell và thư mục tạm theo nền tảng |
+| Tool | ghi/đọc file, edit từ chối khớp nhiều lần, bash trả lỗi không ném kèm `exitCode`, glob/grep, pattern bắt đầu bằng `-`, shell và thư mục tạm theo nền tảng, Glob bỏ qua thư mục hệ thống và dừng khi bị huỷ, grep dừng khi bị huỷ |
 | Input | Enter gửi, `\`+Enter xuống dòng, history, Ctrl+P/Ctrl+N, con trỏ nhiều dòng, paste |
 | Phím | mũi tên khi escape bị tách, lăn chuột, click chuột trái, release/kéo/Shift+click bị bỏ qua, bracketed paste, tiếng Việt, Alt+phím (kể cả chữ hoa và ký tự ngoài ASCII) không bị nhầm thành Escape |
 | Markdown | heading theo cấp, bullet, quote lồng nhau, khối code (thụt lề, cắt dòng, màu mặc định), bảng box-drawing, căn lề, thu hẹp, wrap, cặp surrogate, đậm/nghiêng/đậm nghiêng/gạch ngang |

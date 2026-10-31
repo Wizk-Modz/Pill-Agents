@@ -212,6 +212,44 @@ test('Glob sắp theo thời gian sửa mới nhất và nhận path tuyệt đ�
   });
 });
 
+test('Glob bỏ qua thư mục hệ thống và dừng khi bị huỷ', async () => {
+  await withTempDir(async (dir) => {
+    // node_modules và proc không bao giờ chứa kết quả mong muốn nhưng rất nặng khi quét.
+    await mkdir(path.join(dir, 'node_modules/pkg'), { recursive: true });
+    await writeFile(path.join(dir, 'node_modules/pkg/target.md'), '', 'utf8');
+    await mkdir(path.join(dir, 'proc'), { recursive: true });
+    await writeFile(path.join(dir, 'proc/target.md'), '', 'utf8');
+    const real = path.join(dir, 'that.md');
+    await writeFile(real, '', 'utf8');
+
+    const result = await tool(dir, 'Glob').run(
+      { pattern: '**/*.md', path: dir },
+      new AbortController().signal,
+    );
+    assert.equal(result.content, real, 'chỉ trả file thật, không trả file trong thư mục bị bỏ qua');
+
+    // Huỷ trước khi chạy phải ném ngay thay vì quét xong mới trả.
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      () => tool(dir, 'Glob').run({ pattern: '**/*.md', path: dir }, controller.signal),
+      /Đã huỷ/,
+    );
+  });
+});
+
+test('grep nhận signal và dừng khi bị huỷ', async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(path.join(dir, 'a.ts'), 'needle', 'utf8');
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      () => tool(dir, 'grep').run({ pattern: 'needle', path: dir }, controller.signal),
+      /Đã huỷ/,
+    );
+  });
+});
+
 test('grep tìm được pattern bắt đầu bằng dấu gạch ngang', async () => {  await withTempDir(async (dir) => {
     await writeFile(path.join(dir, 'co.txt'), 'dòng có -ok trong đó', 'utf8');
     const grep = tool(dir, 'grep');

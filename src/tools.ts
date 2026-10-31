@@ -10,11 +10,16 @@ import type { ToolResult, ToolSpec } from './types.js';
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT = 30_000;
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', 'target', 'vendor']);
+// Thư mục hệ thống không bao giờ chứa mã nguồn nhưng lại rất nặng khi quét từ gốc.
+const SKIP_SYSTEM_DIRS = new Set(['proc', 'sys', 'dev', 'run', 'snap', 'boot', 'lost+found']);
 // Read đọc tối đa 2000 dòng mỗi lần và cắt dòng dài hơn 2000 ký tự, giống Claude Code.
 const READ_MAX_LINES = 2000;
 const READ_MAX_LINE_CHARS = 2000;
 const GLOB_SCAN_LIMIT = 2000;
 const GLOB_MAX_RESULTS = 200;
+// Trần thời gian cho tool quét: thư mục lớn như /root hay ổ mạng có thể mất hàng phút,
+// mà model không cần chờ. Hết giờ thì trả kết quả một phần kèm ghi chú.
+const SCAN_TIMEOUT_MS = 10_000;
 
 // Trạng thái dùng chung giữa các tool trong một phiên: file đã đọc để chặn ghi đè mù.
 export type ToolState = {
@@ -50,11 +55,17 @@ async function statIfExists(filePath: string): Promise<Awaited<ReturnType<typeof
 }
 
 // Đọc file kèm số dòng theo dạng cat -n, hỗ trợ offset và limit.
-async function readTool(cwd: string, args: Record<string, unknown>, state: ToolState): Promise<ToolResult> {
+async function readTool(
+  cwd: string,
+  args: Record<string, unknown>,
+  state: ToolState,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
   const filePath = requireAbsolutePath(args.file_path);
   const info = await statIfExists(filePath);
   if (info?.isDirectory()) throw new Error(`"${filePath}" là thư mục; Read chỉ đọc được file.`);
   const content = await readFile(filePath, 'utf8');
+  if (signal?.aborted) throw new Error('Đã huỷ bởi người dùng.');
   state.readFiles.add(filePath);
 
   if (!content) return { content: '(file rỗng)' };
@@ -157,18 +168,41 @@ async function bashTool(cwd: string, args: Record<string, unknown>, signal: Abor
   }
 }
 
+// Kiểm tra đường dẫn có nằm trong thư mục cần bỏ qua không.
+function inSkippedDir(relative: string): boolean {
+  return relative
+    .replaceAll('\\', '/')
+    .split('/')
+    .some((part) => SKIP_DIRS.has(part) || SKIP_SYSTEM_DIRS.has(part));
+}
+
 // Tìm file theo glob, bỏ qua thư mục nặng, sắp theo thời gian sửa mới nhất.
-async function globTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
+async function globTool(
+  cwd: string,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<ToolResult> {
   if (typeof args.pattern !== 'string' || !args.pattern.trim()) throw new Error('Thiếu tham số "pattern".');
   const base = args.path === undefined ? cwd : requireAbsolutePath(args.path, 'path');
   const matches: string[] = [];
-  for await (const entry of glob(args.pattern, { cwd: base })) {
-    const normalized = entry.replaceAll('\\', '/');
-    if (normalized.split('/').some((part) => SKIP_DIRS.has(part))) continue;
-    matches.push(normalized);
+  let timedOut = false;
+  // Trần thời gian tính cả lúc thư mục đích quá lớn; Esc của người dùng huỷ ngay qua signal.
+  const deadline = Date.now() + SCAN_TIMEOUT_MS;
+  // exclude giúp fs.glob không đi vào thư mục nặng; lọc lại ở đây để chắc chắn với
+  // đường dẫn Windows và pattern lạ.
+  for await (const entry of glob(args.pattern, { cwd: base, exclude: inSkippedDir })) {
+    if (inSkippedDir(entry)) continue;
+    matches.push(entry);
+    if (signal.aborted) throw new Error('Đã huỷ bởi người dùng.');
     if (matches.length >= GLOB_SCAN_LIMIT) break;
+    if (Date.now() > deadline) {
+      timedOut = true;
+      break;
+    }
   }
-  if (!matches.length) return { content: 'Không tìm thấy file phù hợp.' };
+  if (!matches.length) {
+    return { content: timedOut ? `Hết ${SCAN_TIMEOUT_MS / 1000}s mà chưa tìm thấy file phù hợp; thử "path" hẹp hơn.` : 'Không tìm thấy file phù hợp.' };
+  }
 
   // Sắp theo mtime giảm dần để file vừa sửa hiện trước, giống Claude Code.
   const dated = await Promise.all(
@@ -181,32 +215,46 @@ async function globTool(cwd: string, args: Record<string, unknown>): Promise<Too
   dated.sort((a, b) => b.mtime - a.mtime || a.full.localeCompare(b.full));
   const shown = dated.slice(0, GLOB_MAX_RESULTS).map((entry) => entry.full);
   const hidden = dated.length - shown.length;
-  const suffix = hidden > 0 ? `\n...[còn ${hidden} file]` : '';
+  const notes: string[] = [];
+  if (hidden > 0) notes.push(`còn ${hidden} file`);
+  // Nói rõ kết quả chưa đầy đủ để model không kết luận thiếu file.
+  if (timedOut) notes.push(`dừng sau ${SCAN_TIMEOUT_MS / 1000}s, chưa quét hết`);
+  const suffix = notes.length ? `\n...[${notes.join('; ')}]` : '';
   return { content: clip(shown.join('\n') + suffix) };
 }
 
 // Quét nội dung file bằng regex, ưu tiên ripgrep nếu có sẵn.
-async function grepTool(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
+async function grepTool(cwd: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ToolResult> {
   if (typeof args.pattern !== 'string' || !args.pattern) throw new Error('Thiếu tham số "pattern".');
   const target = typeof args.path === 'string' && args.path ? args.path : '.';
   const include = typeof args.glob === 'string' && args.glob ? ['-g', args.glob] : [];
+  // rg có sẵn --glob để bỏ thư mục nặng, nhưng vẫn cần signal để Esc dừng được.
   try {
-    const { stdout } = await execFileAsync('rg', ['--line-number', '--no-heading', '--color', 'never', ...include, '-e', args.pattern, target], {
-      cwd,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    const { stdout } = await execFileAsync(
+      'rg',
+      ['--line-number', '--no-heading', '--color', 'never', ...include, '-e', args.pattern, target],
+      { cwd, maxBuffer: 10 * 1024 * 1024, signal, timeout: SCAN_TIMEOUT_MS },
+    );
     return { content: clip(stdout || 'Không có kết quả.') };
   } catch (error) {
-    const err = error as { code?: string; stdout?: string; stderr?: string; message: string };
-    if (err.code === 'ENOENT') return grepFallback(cwd, args);
+    const err = error as { code?: string | number; stdout?: string; stderr?: string; message: string; name?: string };
+    if (err.name === 'AbortError' || signal.aborted) throw new Error('Đã huỷ bởi người dùng.');
+    if (err.code === 'ENOENT') return grepFallback(cwd, args, signal);
     if (err.stdout) return { content: clip(err.stdout) };
-    if (err.code === '1') return { content: 'Không có kết quả.' };
+    if (err.code === 1) return { content: 'Không có kết quả.' };
+    if (err.code === 'ETIMEDOUT') {
+      return { content: `grep quá ${SCAN_TIMEOUT_MS / 1000}s chưa xong; thu hẹp "path" hoặc thêm "glob".`, isError: true };
+    }
     return { content: clip(err.stderr || err.message), isError: true };
   }
 }
 
 // Fallback thuần Node khi máy không có ripgrep.
-export async function grepFallback(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
+export async function grepFallback(
+  cwd: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
   let pattern: RegExp;
   try {
     pattern = new RegExp(String(args.pattern), 'i');
@@ -219,7 +267,9 @@ export async function grepFallback(cwd: string, args: Record<string, unknown>): 
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (results.length >= 200) return;
-      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      // Kiểm tra signal mỗi thư mục để Esc dừng được giữa chừng, không quét hết cây.
+      if (signal?.aborted) throw new Error('Đã huỷ bởi người dùng.');
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name) || SKIP_SYSTEM_DIRS.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(full);
@@ -258,7 +308,7 @@ export function createTools(cwd: string, state: ToolState = createToolState()): 
         },
         required: ['file_path'],
       },
-      run: (args) => readTool(cwd, args, state),
+      run: (args, signal) => readTool(cwd, args, state, signal),
     },
     {
       name: 'Write',
@@ -319,7 +369,7 @@ export function createTools(cwd: string, state: ToolState = createToolState()): 
         },
         required: ['pattern'],
       },
-      run: (args) => grepTool(cwd, args),
+      run: (args, signal) => grepTool(cwd, args, signal),
     },
     {
       name: 'Glob',
@@ -334,7 +384,7 @@ export function createTools(cwd: string, state: ToolState = createToolState()): 
         },
         required: ['pattern'],
       },
-      run: (args) => globTool(cwd, args),
+      run: (args, signal) => globTool(cwd, args, signal),
     },
   ];
 }

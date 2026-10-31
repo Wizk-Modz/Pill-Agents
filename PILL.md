@@ -144,7 +144,7 @@ hoặc khi toggle thinking/tool. `useTranscriptLines.ts` dựng song song bản 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 111 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 113 test:
 
 | File | Nội dung |
 |---|---|
