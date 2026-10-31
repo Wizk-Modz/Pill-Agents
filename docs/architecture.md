@@ -25,7 +25,8 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 | `src/types.ts` | Kiểu dữ liệu dùng chung, chế độ agent, metadata UI của tool | 38 |
 | `src/llm.ts` | Gọi API qua SDK `openai`, xử lý streaming | 153 |
 | `src/tools.ts` | 6 tool theo quy ước Claude Code: `Read`/`Write`/`Edit`/`Glob`, `bash`, `grep` | 340 |
-| `src/agent.ts` | Vòng lặp agent, chọn tool theo chế độ, quản lý hội thoại, lưu phiên | 314 |
+| `src/agent.ts` | Vòng lặp agent, chọn tool theo chế độ, quản lý hội thoại, lưu phiên | 233 |
+| `src/prompt.ts` | Dựng system prompt theo mục: môi trường, cách làm việc, tool, viết code, trả lời | 163 |
 | `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 72 |
 | `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn, tự duyệt mọi tool | 838 |
 | `src/ui/InputBox.tsx` | Ô nhập capsule nhiều dòng, logic con trỏ, history | 319 |
@@ -325,19 +326,26 @@ Không hardcode đường dẫn POSIX:
 
 ## System prompt dựng sẵn
 
-`buildSystemPrompt()` dựng prompt nền theo 5 mục, viết tiếng Việt và gắn với thư mục làm việc:
+Prompt chia thành các mục rời trong `src/prompt.ts`, mỗi mục một hàm, ghép theo thứ tự cố định trong `composePrompt()`:
 
-| Mục | Nội dung |
-|---|---|
-| Môi trường | Vai trò, cơ chế duyệt tool, kết quả tool là dữ liệu (cảnh giác prompt injection), thư mục tạm thật của máy, shell theo nền tảng |
-| Cách làm việc | Hành động khi đã đủ thông tin, bám phạm vi, xử lý yêu cầu mơ hồ, báo cáo trung thực, hỏi trước việc khó hoàn tác, không commit hay push khi chưa được yêu cầu |
-| Tool đang có | Tool nào cần duyệt, gọi song song khi độc lập, đọc trước khi sửa, chạy build/lint/test sau khi sửa |
-| Viết code | Giống code xung quanh, không mở rộng phạm vi, không abstraction sớm, không code chết, không thêm dependency |
-| Trả lời | Ngắn gọn, markdown có nhãn ngôn ngữ, tham chiếu `đường_dẫn:dòng`, không thuật lại suy nghĩ nội bộ |
+| Mục | Hàm | Nội dung |
+|---|---|---|
+| Môi trường | `buildEnvironmentSection()` | Thư mục làm việc, nền tảng, shell theo nền tảng, thư mục tạm thật, nhắc đường dẫn tuyệt đối, có phải git repo hay không |
+| Cách làm việc | `buildWorkingSection()` | Hành động khi đã đủ thông tin, bám phạm vi, xử lý yêu cầu mơ hồ, báo cáo trung thực, hỏi trước việc khó hoàn tác, không commit hay push khi chưa được yêu cầu |
+| Tool đang có | `buildToolSection()` | Chế độ plan chỉ liệt kê tool đọc; chế độ build có thêm ba mục con **Chọn tool**, **Đọc và sửa file**, **Kiểm chứng** |
+| Viết code | `buildCodeSection()` | Giống code xung quanh, không mở rộng phạm vi, không abstraction sớm, không code chết, không thêm dependency |
+| Chế độ plan | `buildPlanSection()` | Rỗng ở build; ở plan yêu cầu trả kế hoạch gồm mục tiêu, file, bước, rủi ro, cách kiểm chứng |
+| Trả lời | `buildReplySection()` | Ngắn gọn, markdown có nhãn ngôn ngữ, tham chiếu `đường_dẫn:dòng`, không thuật lại suy nghĩ nội bộ |
+
+Tách hàm theo mục để test kiểm riêng từng phần và để sửa một mục không phải đọc cả prompt dài. `buildSystemPrompt(cwd, mode)` trong `agent.ts` chỉ là lớp mỏng: phát hiện `.git` rồi gọi `composePrompt()`.
+
+### Vì sao nêu ngữ cảnh thay vì chỉ nêu quy tắc
+
+Model không tự biết máy đang chạy Windows hay Linux, thư mục tạm ở đâu, hay thư mục làm việc có git hay không. Đoán sai mấy thứ đó dẫn tới lỗi rất cụ thể: dùng `/tmp` trên Termux, chạy `git status` trong thư mục không phải repo, hay ghép đường dẫn tương đối sai gốc. Nên prompt nêu thẳng từng giá trị lấy từ `os.tmpdir()` và `process.platform`.
+
+Phần quy tắc tham khảo cách Claude Code và OpenCode tổ chức prompt: xếp từ quy tắc chung (môi trường, cách làm việc) xuống quy tắc riêng (tool, viết code, trả lời), và nhóm hướng dẫn theo **giai đoạn công việc** — chọn tool, đọc/sửa file, kiểm chứng — thay vì trộn lẫn.
 
 Prompt nền đứng trước phần PILL.md nạp ở mục dưới, nên quy tắc riêng của dự án luôn thắng.
-
-Ở chế độ `plan`, mục **Tool đang có** chỉ liệt kê ba tool đọc và nêu rõ `Write`/`Edit`/`bash` bị khoá; prompt có thêm mục **Chế độ plan** yêu cầu trả về mục tiêu, file liên quan, các bước, rủi ro và cách kiểm chứng. Cả hai prompt dùng chung phần PILL.md đã nạp.
 
 ## PILL.md
 

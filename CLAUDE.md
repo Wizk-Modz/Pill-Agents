@@ -75,6 +75,8 @@ docs/                 Tài liệu chi tiết
   (biến `$TMPDIR`) — Termux dùng `$PREFIX/tmp`, Windows dùng `%TEMP%`; shell lấy qua `resolveShell()`.
 - **Giao diện**: ưu tiên `COLORS`/`GLYPHS` trong `src/ui/theme.ts`; không hardcode
   mã màu mới rải rác. Icon tool lấy từ `toolIcon()`.
+- **Changelog**: thay đổi nào người dùng thấy được thì thêm mục vào `CHANGELOG.md`
+  phần `Chưa phát hành`, viết theo việc người dùng làm được chứ không theo file đã sửa.
 
 ## Quy tắc quan trọng của dự án này
 
@@ -144,7 +146,7 @@ hoặc khi toggle thinking/tool. `useTranscriptLines.ts` dựng song song bản 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 113 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 119 test:
 
 | File | Nội dung |
 |---|---|
@@ -201,3 +203,4 @@ Ví dụ: `feat(usage): hiển thị token đã dùng trên footer`
 - [docs/tools.md](docs/tools.md) — 6 tool, tham số, cách thêm tool mới
 - [docs/configuration.md](docs/configuration.md) — settings.json, env, provider khác
 - [docs/development.md](docs/development.md) — build, test, gỡ lỗi, quy ước commit
+- [CHANGELOG.md](CHANGELOG.md) — thay đổi theo phiên bản

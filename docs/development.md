@@ -78,7 +78,7 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-113 test, bao gồm:
+119 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
@@ -87,7 +87,7 @@ npm test
 | Phím | mũi tên khi escape bị tách, lăn chuột, click chuột trái, release/kéo/Shift+click bị bỏ qua, bracketed paste, tiếng Việt, Alt+phím (kể cả chữ hoa và ký tự ngoài ASCII) không bị nhầm thành Escape |
 | Markdown | heading theo cấp, bullet, quote lồng nhau, khối code (thụt lề, cắt dòng, màu mặc định), bảng box-drawing, căn lề, thu hẹp, wrap, cặp surrogate, đậm/nghiêng/đậm nghiêng/gạch ngang |
 | PILL.md | global + project, thư mục cha, file rỗng |
-| Agent | system prompt: thư mục làm việc, thư mục tạm, 6 tool, các mục chính; prompt plan và lọc tool chỉ đọc |
+| Agent | system prompt: thư mục làm việc, nền tảng, shell, thư mục tạm, git repo, 6 tool, các mục chính; mục con Chọn tool/Đọc và sửa file/Kiểm chứng; prompt plan và lọc tool chỉ đọc; ghép từng mục rời |
 | Cấu hình | đọc `PILL_MODE`/`mode`, chấp nhận build/plan, bỏ giá trị lạ |
 | Trạng thái | đọc `statusLine`, lấy dòng đầu stdout, JSON gửi qua stdin (gồm `mode`), thư mục chạy, timeout, lệnh lỗi |
 | Diff | nhận diện dòng thay đổi, thêm/bớt, giới hạn và đánh dấu truncated, hai chuỗi rỗng |
@@ -169,6 +169,17 @@ Nếu provider có trường đặc biệt (như `reasoning_content` của DeepS
 const extras = delta as { reasoning_content?: string | null };
 if (extras.reasoning_content) options.onReasoning?.(extras.reasoning_content);
 ```
+
+## Changelog
+
+`CHANGELOG.md` ở gốc repo, định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/), phiên bản theo SemVer. Bản mới nhất trên cùng.
+
+Quy ước khi viết:
+
+- Thay đổi chưa phát hành vào mục `## Chưa phát hành`, nhóm theo `### Thêm`, `### Sửa`, `### Thay đổi`
+- Viết theo **việc người dùng làm được**, không theo file đã sửa: "`Esc` dừng được tool đang chạy dở" chứ không phải "thêm signal vào globTool"
+- Nêu số đo khi có: "giảm từ hơn 20 giây xuống 2,2 giây" tốt hơn "nhanh hơn"
+- Khi phát hành: đổi `## Chưa phát hành` thành `## <phiên bản>`, bump `version` trong `package.json` (`src/version.ts` đọc từ đó nên chỉ cần sửa một chỗ), rồi thêm mục `## Chưa phát hành` mới ở trên
 
 ## Quy ước code
 

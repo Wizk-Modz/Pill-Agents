@@ -114,6 +114,8 @@ Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `mode`, `cwd`, `to
 
 Lệnh: `/plan`, `/build`, `/mode`, `/auto on|off`, `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 
+Mọi thay đổi đáng chú ý được ghi trong [CHANGELOG.md](CHANGELOG.md).
+
 ## Chế độ plan và build
 
 Giống OpenCode, PillAgents có hai chế độ:
