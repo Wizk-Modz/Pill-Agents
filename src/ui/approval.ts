@@ -3,24 +3,33 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ToolCall } from '../types.js';
 import { diffLines, type DiffResult } from './diff.js';
-import { fitText } from './format.js';
+import { fitText, visibleWidth } from './format.js';
 import { paintSegments, wrapSegments, type Segment } from './markdown.js';
 
 const DANGEROUS_PATTERNS: RegExp[] = [
-  /\brm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s*)+/,
+  /\brm\b/,
   /\bgit\s+reset\s+--hard\b/,
   /\bgit\s+clean\b[^;\n]*-[a-zA-Z]*f/,
-  /\bgit\s+checkout\s+--\s/,
+  /\bgit\s+(?:checkout|restore)\s+(?:--\s+)?\.(?:\s|$)/,
+  /\bgit\s+push\b[^;\n]*(?:--force(?:-with-lease)?\b|-f\b)/,
   /\bgit\s+restore\b[^;\n]*--source/,
   /\bmkfs(?:\.\w+)?\b/,
   /\bdd\s+if=/,
+  /\bdd\s+[^;\n]*\bof=/,
+  /\b(?:fdisk|parted)\b/,
   /\bchmod\s+-R\s+777\s+\//,
-  /\b(?:shutdown|reboot)\b/,
+  /\bch(?:mod|own)\s+-R\b/,
+  /\b(?:shutdown|reboot|poweroff|halt)\b/,
+  /\b(?:truncate|shred)\b/,
   /\bfind\b[^;\n]*-delete\b/,
+  /\b(?:curl|wget)\b[^;\n]*\|\s*(?:sh|bash)\b/,
+  /\bsudo\b/,
+  /\b(?:npm|pnpm|yarn)\s+publish\b/,
+  /\bdocker\s+(?:rm|rmi)\b/,
   /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:/,
 ];
 
-// Phát hiện lệnh shell có khả năng xoá hoặc ghi đè dữ liệu.
+// Phát hiện lệnh shell có khả năng xoá, ghi đè dữ liệu hoặc thay đổi hệ thống.
 export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
 }
@@ -34,6 +43,26 @@ function parseArgs(call: ToolCall): Record<string, unknown> {
   }
 }
 
+// Lấy lệnh bash hợp lệ từ tham số tool, trả undefined nếu thiếu hoặc sai kiểu.
+export function bashCommand(call: ToolCall): string | undefined {
+  if (call.name !== 'bash') return undefined;
+  const command = parseArgs(call).command;
+  return typeof command === 'string' && command.trim() ? command : undefined;
+}
+
+// Cho phép tự duyệt lệnh bash thường khi phiên đã bật tin cậy bash.
+export function canAutoApproveBash(call: ToolCall, trusted: boolean): boolean {
+  if (!trusted) return false;
+  const command = bashCommand(call);
+  return command !== undefined && !isDangerousCommand(command);
+}
+
+// Kiểm tra lệnh hiện tại có thể bật tự duyệt bash; lệnh nguy hiểm luôn hỏi.
+export function canTrustBash(call: ToolCall): boolean {
+  const command = bashCommand(call);
+  return command !== undefined && !isDangerousCommand(command);
+}
+
 // Wrap nội dung thành các dòng ANSI có tiền tố, giới hạn số dòng.
 function textPreview(
   text: string,
@@ -41,6 +70,7 @@ function textPreview(
   prefix: string,
   style: Omit<Segment, 'text'>,
   maxLines: number,
+  continuation = prefix,
 ): string[] {
   const source = text.split('\n');
   const bodyWidth = Math.max(10, width - [...prefix].length);
@@ -52,8 +82,10 @@ function textPreview(
       hidden = source.length - index;
       break;
     }
-    for (const segments of wrapped) {
-      output.push(paintSegments([{ text: prefix, dim: true }, ...segments]));
+    for (let part = 0; part < wrapped.length; part += 1) {
+      output.push(
+        paintSegments([{ text: part === 0 ? prefix : continuation, dim: true }, ...(wrapped[part] ?? [])]),
+      );
     }
   }
   if (hidden > 0) {
@@ -89,12 +121,39 @@ function editDiff(args: Record<string, unknown>): DiffResult | undefined {
   return diffLines(args.old_string, args.new_string, 400);
 }
 
+// Nối các hành động duyệt, tự tách thành hai dòng khi terminal hẹp.
+function approvalActions(width: number, expanded: boolean, trustable: boolean): string[] {
+  const accept: Segment[] = [{ text: '  ' }, { text: '[y]', color: 'green' }, { text: ' đồng ý' }];
+  const deny: Segment[] = [{ text: '[n/Esc]', color: 'red' }, { text: ' từ chối' }];
+  const trust: Segment[] = trustable
+    ? [{ text: '[a]', color: 'cyan' }, { text: ' tự duyệt bash' }]
+    : [];
+  const expand: Segment[] = [
+    { text: '[d]', color: 'cyan' },
+    { text: expanded ? ' thu gọn' : ' xem đầy đủ' },
+  ];
+  const oneLine: Segment[] = [
+    ...accept,
+    { text: '   ' },
+    ...(trustable ? [...trust, { text: '   ' }] : []),
+    ...deny,
+    { text: '   ' },
+    ...expand,
+  ];
+  const plain = oneLine.map((segment) => segment.text).join('');
+  if (visibleWidth(plain) <= width) return [paintSegments(oneLine)];
+  return [
+    paintSegments([...accept, { text: '   ' }, ...deny]),
+    paintSegments([{ text: '  ' }, ...(trustable ? [...trust, { text: '   ' }] : []), ...expand]),
+  ];
+}
+
 // Dựng toàn bộ dòng ANSI cho hộp duyệt, chiều cao khớp với số dòng trả về.
 export function buildApprovalLines(
   call: ToolCall,
   options: { width: number; expanded: boolean; cwd: string; maxPreview?: number },
 ): string[] {
-  const width = Math.max(20, options.width);
+  const width = Math.max(10, options.width);
   const maxPreview = Math.max(1, options.maxPreview ?? (options.expanded ? 24 : 6));
   const args = parseArgs(call);
   const lines: string[] = [];
@@ -114,11 +173,15 @@ export function buildApprovalLines(
     if (isDangerousCommand(command)) {
       lines.push(
         paintSegments([
-          { text: fitText('  ⚠ Lệnh có thể phá huỷ dữ liệu — kiểm tra kỹ trước khi đồng ý.', width), color: 'red', bold: true },
+          {
+            text: fitText('  ⚠ Lệnh có thể phá huỷ dữ liệu — luôn cần duyệt thủ công.', width),
+            color: 'red',
+            bold: true,
+          },
         ]),
       );
     }
-    lines.push(...textPreview(command, width, '  $ ', { color: 'white' }, maxPreview));
+    lines.push(...textPreview(command, width, '  $ ', { color: 'white' }, maxPreview, '    '));
   } else if (call.name === 'edit_file') {
     const filePath = typeof args.path === 'string' ? args.path : '';
     const diff = editDiff(args);
@@ -165,15 +228,6 @@ export function buildApprovalLines(
     lines.push(paintSegments([{ text: `  ${fitText(call.arguments, Math.max(10, width - 2))}`, dim: true }]));
   }
 
-  lines.push(
-    paintSegments([
-      { text: '  [y]', color: 'green' },
-      { text: ' đồng ý   ' },
-      { text: '[n/Esc]', color: 'red' },
-      { text: ' từ chối   ' },
-      { text: '[d]', color: 'cyan' },
-      { text: options.expanded ? ' thu gọn' : ' xem đầy đủ' },
-    ]),
-  );
+  lines.push(...approvalActions(width, options.expanded, canTrustBash(call)));
   return lines;
 }

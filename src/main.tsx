@@ -6,8 +6,7 @@ import { Agent } from './agent.js';
 import { AGENT_MODES, loadConfig, parseMode } from './config.js';
 import { createTools } from './tools.js';
 import { App } from './ui/App.js';
-
-const VERSION = '0.1.0';
+import { VERSION } from './version.js';
 
 const HELP = `PillAgents ${VERSION} — coding agent trong terminal
 

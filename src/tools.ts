@@ -56,7 +56,8 @@ async function editFileTool(cwd: string, args: Record<string, unknown>): Promise
   if (occurrences > 1 && !args.replace_all) {
     throw new Error(`"old_string" xuất hiện ${occurrences} lần; thêm replace_all=true hoặc chuỗi cụ thể hơn.`);
   }
-  const updated = args.replace_all ? content.split(oldString).join(newString) : content.replace(oldString, newString);
+  // Dùng hàm thay thế thay vì chuỗi: chuỗi bị hiểu là mẫu, nên new_string chứa $& hay $1 sẽ bị biến đổi.
+  const updated = args.replace_all ? content.split(oldString).join(newString) : content.replace(oldString, () => newString);
   await writeFile(filePath, updated, 'utf8');
   return { content: `Đã sửa ${filePath} (${occurrences} chỗ).` };
 }
@@ -140,8 +141,14 @@ async function grepTool(cwd: string, args: Record<string, unknown>): Promise<Too
 }
 
 // Fallback thuần Node khi máy không có ripgrep.
-async function grepFallback(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const pattern = new RegExp(String(args.pattern), 'i');
+export async function grepFallback(cwd: string, args: Record<string, unknown>): Promise<ToolResult> {
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(String(args.pattern), 'i');
+  } catch (error) {
+    // Regex hợp lệ với ripgrep có thể không hợp lệ với JS; báo lỗi thay vì ném để agent đọc được.
+    return { content: error instanceof Error ? error.message : String(error), isError: true };
+  }
   const root = path.resolve(cwd, typeof args.path === 'string' && args.path ? args.path : '.');
   const results: string[] = [];
   const walk = async (dir: string): Promise<void> => {

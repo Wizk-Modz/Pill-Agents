@@ -1,6 +1,6 @@
 // Kiểm thử đọc chế độ agent từ cấu hình.
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -81,4 +81,12 @@ test('loadConfig bỏ mode không hợp lệ và dùng giá trị kế tiếp', 
       assert.equal(loadConfig(dir).mode, 'build');
     });
   });
+});
+
+test('phiên bản hiển thị lấy từ package.json thay vì hardcode', async () => {
+  // Test chạy từ dist/test nên package.json ở gốc repo là hai cấp phía trên.
+  const root = path.resolve(import.meta.dirname, '../..');
+  const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as { version: string };
+  const { VERSION } = await import('../src/version.js');
+  assert.equal(VERSION, pkg.version);
 });

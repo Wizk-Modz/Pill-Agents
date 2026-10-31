@@ -46,6 +46,8 @@ export function buildSystemPrompt(cwd: string, mode: AgentMode = 'build'): strin
         '## Tool đang có',
         '- read_file, grep, glob: chỉ đọc, không cần duyệt.',
         '- write_file, edit_file, bash: cần người dùng duyệt trước khi chạy.',
+        '- Dùng read_file, grep và glob cho việc đọc hoặc tìm kiếm; chỉ dùng bash cho build, test, git hoặc lệnh hệ thống thật sự cần thiết.',
+        '- Không chạy lại lệnh vừa chạy nếu không có thay đổi liên quan.',
         '- Gọi song song các tool độc lập trong cùng một lượt; tool phụ thuộc nhau thì gọi tuần tự.',
         '- Đọc file trước khi sửa; không sửa dựa trên phỏng đoán nội dung.',
         '- Ưu tiên edit_file với chuỗi chính xác; chuỗi khớp nhiều lần thì mở rộng ngữ cảnh hoặc dùng replace_all.',

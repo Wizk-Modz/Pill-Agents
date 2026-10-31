@@ -1,8 +1,9 @@
 // Chuyển transcript thành các dòng ANSI, render markdown và thẻ tool có thể mở rộng.
 import type { ToolCall, ToolResult } from '../types.js';
 import { diffLines, type DiffResult } from './diff.js';
-import { formatDuration, fitText } from './format.js';
+import { formatDuration, fitText, padBetween, visibleWidth } from './format.js';
 import { paintSegments, renderMarkdown, renderStyledText, type Segment } from './markdown.js';
+import { COLORS, GLYPHS, toolIcon } from './theme.js';
 
 export type ItemBody =
   | { kind: 'user'; text: string }
@@ -19,6 +20,8 @@ const RESULT_MAX_CHARS = 400;
 const RESULT_EXPANDED_LINES = 40;
 const RESULT_EXPANDED_CHARS = 4000;
 const THINKING_MAX_LINES = 10;
+const TOOL_PREFIX_WIDTH = 8;
+const TOOL_RAIL = `      ${GLYPHS.rail} `;
 
 // Phân tích tham số tool để hiển thị, trả object rỗng nếu JSON lỗi.
 function parseArgs(call: ToolCall): Record<string, unknown> {
@@ -99,10 +102,10 @@ function toolStats(item: Extract<ItemBody, { kind: 'tool' }>, diff: DiffResult |
 // Render một dòng diff kèm dấu và màu tương ứng.
 function diffLine(line: DiffResult['lines'][number], width: number): string {
   const marker = line.kind === 'add' ? '+ ' : line.kind === 'remove' ? '- ' : '  ';
-  const color = line.kind === 'add' ? 'green' : line.kind === 'remove' ? 'red' : undefined;
-  const text = fitText(line.text, Math.max(20, width - 7));
+  const color = line.kind === 'add' ? COLORS.success : line.kind === 'remove' ? COLORS.danger : undefined;
+  const text = fitText(line.text, Math.max(10, width - TOOL_PREFIX_WIDTH - 2));
   return paintSegments([
-    { text: '    ', dim: true },
+    { text: TOOL_RAIL, color: COLORS.border, dim: true },
     { text: marker, color },
     { text, color, dim: line.kind === 'context' },
   ]);
@@ -110,21 +113,28 @@ function diffLine(line: DiffResult['lines'][number], width: number): string {
 
 // Render thẻ tool: header một dòng, kết quả hoặc diff bên dưới.
 function toolLines(item: Extract<ItemBody, { kind: 'tool' }>, width: number): string[] {
-  const summary = (item.summary ?? summarizeToolCall(item.call)).replace(/\s+/g, ' ').slice(0, Math.max(20, width - 24));
   const diff = editDiff(item.call);
   const stats = toolStats(item, diff);
-  const glyph = item.result ? (item.result.isError ? '✗' : '✓') : '●';
-  const color = item.result ? (item.result.isError ? 'red' : 'green') : 'yellow';
-  const marker = item.result ? (item.expanded ? '▾' : '▸') : ' ';
-  const lines = [
-    paintSegments([
-      { text: `  ${marker} `, color: 'gray' },
-      { text: `${glyph} `, color },
-      { text: item.call.name, bold: true },
-      { text: ` ${summary}`, dim: true },
-      ...(stats ? [{ text: ` · ${stats}`, color: 'gray' as const, dim: true }] : []),
-    ]),
-  ];
+  const pending = !item.result;
+  const glyph = pending ? GLYPHS.pending : item.result!.isError ? GLYPHS.error : GLYPHS.success;
+  const statusColor = pending ? COLORS.warning : item.result!.isError ? COLORS.danger : COLORS.success;
+  const marker = item.result ? (item.expanded ? GLYPHS.collapse : GLYPHS.expand) : ' ';
+  const summaryRaw = (item.summary ?? summarizeToolCall(item.call)).replace(/\s+/g, ' ').trim();
+  const statsText = stats ? paintSegments([{ text: stats, color: COLORS.muted, dim: true }]) : '';
+  const statsWidth = stats ? visibleWidth(statsText) : 0;
+  const showStats = statsWidth > 0 && TOOL_PREFIX_WIDTH + item.call.name.length + statsWidth + 4 <= width;
+  const room = width - TOOL_PREFIX_WIDTH - item.call.name.length - 2 - (showStats ? statsWidth + 2 : 0);
+  const summary = room >= 4 ? fitText(summaryRaw, room) : '';
+  const left = paintSegments([
+    { text: '  ' },
+    { text: `${marker} `, color: COLORS.muted, dim: true },
+    { text: `${glyph} `, color: statusColor },
+    { text: `${toolIcon(item.call.name)} `, color: COLORS.muted },
+    { text: item.call.name, bold: true },
+    ...(summary ? [{ text: `  ${summary}`, dim: true } as Segment] : []),
+  ]);
+  const header = showStats ? padBetween(left, statsText, width, 2) : left;
+  const lines = ['', header];
   if (!item.result) return lines;
 
   const maxLines = item.expanded ? RESULT_EXPANDED_LINES : RESULT_MAX_LINES;
@@ -134,7 +144,12 @@ function toolLines(item: Extract<ItemBody, { kind: 'tool' }>, width: number): st
     for (const line of visible) lines.push(diffLine(line, width));
     const hidden = diff.lines.length - visible.length;
     if (hidden > 0) {
-      lines.push(paintSegments([{ text: `    … +${hidden} dòng`, color: 'gray', dim: true }]));
+      lines.push(
+        paintSegments([
+          { text: TOOL_RAIL, color: COLORS.border, dim: true },
+          { text: `… +${hidden} dòng`, color: COLORS.muted, dim: true },
+        ]),
+      );
     }
     return lines;
   }
@@ -143,7 +158,12 @@ function toolLines(item: Extract<ItemBody, { kind: 'tool' }>, width: number): st
   for (const line of clipped) {
     lines.push(
       paintSegments([
-        { text: `    ${line}`, dim: true, color: item.result.isError ? 'red' : undefined },
+        { text: TOOL_RAIL, color: item.result.isError ? COLORS.danger : COLORS.border, dim: true },
+        {
+          text: fitText(line, Math.max(10, width - TOOL_PREFIX_WIDTH)),
+          dim: true,
+          color: item.result.isError ? COLORS.danger : undefined,
+        },
       ]),
     );
   }
@@ -159,10 +179,14 @@ function prefixLines(lines: Segment[][], first: Segment[], rest: Segment[]): Seg
 export function itemToLines(item: TranscriptItem, width: number): string[] {
   switch (item.kind) {
     case 'user': {
-      const lines = renderStyledText(item.text, width - 2, { color: 'cyan', bold: true });
+      const lines = renderStyledText(item.text, width - 4, { bold: true });
       return [
         '',
-        ...prefixLines(lines, [{ text: '❯ ', color: 'cyan', bold: true }], [{ text: '  ' }]).map(paintSegments),
+        ...prefixLines(
+          lines,
+          [{ text: `  ${GLYPHS.prompt} `, color: COLORS.accent, bold: true }],
+          [{ text: '    ' }],
+        ).map(paintSegments),
       ];
     }
     case 'assistant': {
@@ -170,32 +194,46 @@ export function itemToLines(item: TranscriptItem, width: number): string[] {
       return ['', ...prefixLines(lines, [{ text: '  ' }], [{ text: '  ' }]).map(paintSegments)];
     }
     case 'thinking': {
+      const label = item.seconds ? `Suy nghĩ ${item.seconds}s` : 'Đang suy nghĩ';
       // Sau khi xong, khối thinking thu gọn thành một dòng; bấm phím hoặc click để mở lại.
-      const label = item.seconds ? `Thought for ${item.seconds}s` : 'Thinking';
       if (item.expanded === false) {
-        return [
-          paintSegments([
-            { text: `  ▸ ✻ ${label} `, color: 'gray', dim: true },
-            { text: '(click hoặc ctrl+o)', color: 'gray', dim: true },
-          ]),
-        ];
+        const left = paintSegments([
+          { text: `  ${GLYPHS.expand} ${GLYPHS.thinking} ${label}`, color: COLORS.muted, dim: true },
+        ]);
+        const hint = paintSegments([{ text: 'click để mở', color: COLORS.muted, dim: true }]);
+        if (width >= visibleWidth(left) + visibleWidth(hint) + 3) {
+          return ['', padBetween(left, hint, width, 2)];
+        }
+        return ['', left];
       }
       // Nội dung thinking là markdown nên render đầy đủ, chỉ giữ style mờ.
       const tail = item.text.split('\n').slice(-THINKING_MAX_LINES).join('\n');
       const lines = renderMarkdown(tail, width - 4);
       return [
-        paintSegments([{ text: `  ▾ ✻ ${label}`, color: 'gray', dim: true, italic: true }]),
-        ...lines.map((line) => paintSegments([{ text: '    ' }, ...line.map((segment) => ({ ...segment, dim: true }))])),
+        '',
+        paintSegments([{ text: `  ${GLYPHS.collapse} ${GLYPHS.thinking} ${label}`, color: COLORS.muted, dim: true, italic: true }]),
+        ...lines.map((line) =>
+          paintSegments([
+            { text: `  ${GLYPHS.rail} `, color: COLORS.border, dim: true },
+            ...line.map((segment) => ({ ...segment, dim: true })),
+          ]),
+        ),
       ];
     }
     case 'info':
-      return renderStyledText(item.text, width - 2, { dim: true }).map((line) =>
-        paintSegments([{ text: '  ' }, ...line]),
-      );
+      return [
+        '',
+        ...renderStyledText(item.text, width - 4, { dim: true }).map((line) =>
+          paintSegments([{ text: `  ${GLYPHS.bullet} `, color: COLORS.accent, dim: true }, ...line]),
+        ),
+      ];
     case 'error':
-      return renderStyledText(item.text, width - 4, { color: 'red' }).map((line, index) =>
-        paintSegments([{ text: index === 0 ? '  ✗ ' : '    ', color: 'red' }, ...line]),
-      );
+      return [
+        '',
+        ...renderStyledText(item.text, width - 4, { color: COLORS.danger }).map((line, index) =>
+          paintSegments([{ text: index === 0 ? `  ${GLYPHS.error} ` : '    ', color: COLORS.danger }, ...line]),
+        ),
+      ];
     case 'tool':
       return toolLines(item, width);
   }

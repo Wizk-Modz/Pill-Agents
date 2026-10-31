@@ -39,18 +39,19 @@ src/
 ├── statusline.ts     Chạy lệnh statusLine, lấy dòng đầu stdout
 └── ui/
     ├── App.tsx       Màn hình chính, bố cục, state, phím/chuột
-    ├── Header.tsx    Header phiên, chế độ, model, thư mục, nhánh git
+    ├── Header.tsx    Header thương hiệu, badge chế độ, thư mục, nhánh git
     ├── StatusBar.tsx Footer trạng thái, token, thời gian
-    ├── Welcome.tsx   Màn hình chào phiên trống
+    ├── Welcome.tsx   Màn hình chào capsule, bản gọn theo chiều cao
     ├── QueuePanel.tsx Bảng tin nhắn xếp hàng
-    ├── ApprovalPanel.tsx Hiển thị hộp duyệt
-    ├── InputBox.tsx  Ô nhập nhiều dòng, con trỏ, history
+    ├── ApprovalPanel.tsx Hộp duyệt viền vàng
+    ├── InputBox.tsx  Ô nhập capsule nhiều dòng, con trỏ, history
     ├── useKeys.ts    Parser phím thô, chuột, paste
     ├── markdown.ts   Markdown → segment → ANSI
     ├── Transcript.tsx Item hội thoại → dòng, thẻ tool, diff
     ├── approval.ts   Nội dung duyệt, cảnh báo lệnh nguy hiểm
     ├── diff.ts       Diff dòng LCS
-    ├── format.ts     Token, thời gian, đường dẫn, spinner
+    ├── format.ts     Token, thời gian, đường dẫn, độ rộng ANSI
+    ├── theme.ts      Palette, glyph, icon tool, viền ASCII
     ├── git.ts        Đọc nhánh git
     ├── hitTest.ts    Tọa độ chuột → dòng transcript
     ├── useTranscriptLines.ts Cache dòng + bản đồ click
@@ -66,12 +67,14 @@ docs/                 Tài liệu chi tiết
   Không thêm phần tham chiếu như `(xem file X)` nếu không cần.
 - **Tên**: `camelCase` cho biến/hàm, `PascalCase` cho class/component,
   `SCREAMING_SNAKE_CASE` cho hằng.
-- **File > 300 dòng**: cân nhắc tách module. `App.tsx` hiện ~744 dòng.
+- **File > 300 dòng**: cân nhắc tách module. `App.tsx` hiện ~746 dòng.
 - **Không thêm dependency** khi stdlib hoặc dependency có sẵn làm được.
   Mọi dependency phải pin version chính xác, không dùng `^` hay `latest`.
 - **Không dead code**: xoá import, hàm, biến không dùng ngay khi phát hiện.
 - **Đa nền tảng**: không hardcode đường dẫn POSIX. Thư mục tạm lấy từ `os.tmpdir()`
   (biến `$TMPDIR`) — Termux dùng `$PREFIX/tmp`, Windows dùng `%TEMP%`; shell lấy qua `resolveShell()`.
+- **Giao diện**: ưu tiên `COLORS`/`GLYPHS` trong `src/ui/theme.ts`; không hardcode
+  mã màu mới rải rác. Icon tool lấy từ `toolIcon()`.
 
 ## Quy tắc quan trọng của dự án này
 
@@ -141,7 +144,7 @@ hoặc khi toggle thinking/tool. `useTranscriptLines.ts` dựng song song bản 
 
 ## Test
 
-Dùng `node:test` có sẵn, không cần framework. Hiện 85 test:
+Dùng `node:test` có sẵn, không cần framework. Hiện 102 test:
 
 | File | Nội dung |
 |---|---|
@@ -152,7 +155,7 @@ Dùng `node:test` có sẵn, không cần framework. Hiện 85 test:
 | `test/config.test.ts` | Đọc chế độ build/plan, thứ tự ưu tiên và giá trị lạ |
 | `test/statusline.test.ts` | Dòng trạng thái: đọc settings.json, chạy lệnh, lấy dòng đầu stdout |
 | `test/diff.test.ts` | Diff dòng LCS, thêm/bớt, giới hạn, truncated |
-| `test/ui.test.ts` | Format, hit-test, nội dung duyệt, thẻ tool, header/footer chế độ |
+| `test/ui.test.ts` | Format, độ rộng ANSI, hit-test, nội dung duyệt, thẻ tool, header/footer, ô nhập, welcome, hàng đợi |
 
 Test không gọi mạng — dùng thư mục tạm qua `withTempDir()`.
 
@@ -170,7 +173,7 @@ TUI cần terminal thật, không test tự động được. Kiểm tra thủ c
 | Duyệt tool | Gửi "chạy lệnh", bấm `y`; thử `n`, `Esc`, `d` mở rộng |
 | Mở rộng | Click tiêu đề thinking/tool, `Ctrl+O`, `Ctrl+T` |
 | Kích thước | 80×24 và 120×40, resize qua lại không tràn footer |
-| Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → `⏳ 1 chờ`; bấm `Esc`, lượt hiện tại dừng nhưng tin chờ vẫn chạy tiếp |
+| Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → `↳ n tin đang chờ`; bấm `Esc`, lượt hiện tại dừng nhưng tin chờ vẫn chạy tiếp |
 | Thinking | Cần mock trả `reasoning_content` |
 | Diff | Cần mock trả `edit_file` |
 | Gợi ý lệnh | Gõ `/`, dùng `Tab`/`↑↓` |

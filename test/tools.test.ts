@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { EMPTY_KEY as noKey, reduceInput, reduceString } from '../src/ui/InputBox.js';
-import { childEnv, createTools, resolveShell } from '../src/tools.js';
+import { childEnv, createTools, grepFallback, resolveShell } from '../src/tools.js';
 
 // Tạo thư mục tạm cho mỗi test.
 async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
@@ -50,6 +50,15 @@ test('edit_file thay toàn bộ khi replace_all', async () => {
     const edit = tool(dir, 'edit_file');
     await edit.run({ path: 'x.txt', old_string: 'a', new_string: 'b', replace_all: true }, new AbortController().signal);
     assert.equal(await readFile(path.join(dir, 'x.txt'), 'utf8'), 'b b');
+  });
+});
+
+test('edit_file giữ nguyên new_string có ký tự $ đặc biệt của String.replace', async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(path.join(dir, 'x.txt'), 'echo A\n', 'utf8');
+    const edit = tool(dir, 'edit_file');
+    await edit.run({ path: 'x.txt', old_string: 'A', new_string: 'B$&C$1$\'`' }, new AbortController().signal);
+    assert.equal(await readFile(path.join(dir, 'x.txt'), 'utf8'), 'echo B$&C$1$\'`\n');
   });
 });
 
@@ -116,6 +125,14 @@ test('grep tìm được pattern bắt đầu bằng dấu gạch ngang', async 
   });
 });
 
+test('grepFallback trả lỗi thay vì ném khi regex không hợp lệ', async () => {
+  await withTempDir(async (dir) => {
+    const result = await grepFallback(dir, { pattern: 'a(' });
+    assert.equal(result.isError, true);
+    assert.match(result.content, /Invalid regular expression/i);
+  });
+});
+
 test('reduceInput gửi khi Enter và không gửi khi rỗng', () => {
   const enter = { ...noKey, return: true };
   const typed = reduceInput({ value: '', cursor: 0, historyIndex: -1 }, 'h', noKey, []);
@@ -123,6 +140,21 @@ test('reduceInput gửi khi Enter và không gửi khi rỗng', () => {
   assert.equal(typed.state.value, 'h');
   assert.equal(submitted.submit, 'hi');
   assert.equal(reduceInput({ value: '  ', cursor: 2, historyIndex: -1 }, '', enter, []).submit, undefined);
+});
+
+test('Ctrl+U và Ctrl+K xoá theo dòng hiện tại, không xoá cả prompt nhiều dòng', () => {
+  const ctrl = { ...noKey, ctrl: true };
+  // Con trỏ giữa dòng thứ hai: Ctrl+U chỉ xoá từ đầu dòng hai.
+  const up = reduceInput({ value: 'một\nhai ba', cursor: 7, historyIndex: -1 }, 'u', ctrl, []);
+  assert.equal(up.state.value, 'một\n ba');
+  assert.equal(up.state.cursor, 4);
+  // Ctrl+K xoá đến hết dòng hai, giữ nguyên dòng một và dấu xuống dòng.
+  const down = reduceInput({ value: 'một\nhai ba', cursor: 7, historyIndex: -1 }, 'k', ctrl, []);
+  assert.equal(down.state.value, 'một\nhai');
+  assert.equal(down.state.cursor, 7);
+  // Ở dòng đầu nhiều dòng, Ctrl+K không nuốt dòng sau.
+  const firstLine = reduceInput({ value: 'ab\ncd', cursor: 1, historyIndex: -1 }, 'k', ctrl, []);
+  assert.equal(firstLine.state.value, 'a\ncd');
 });
 
 test('reduceInput chèn xuống dòng khi gõ "\\" rồi Enter', () => {

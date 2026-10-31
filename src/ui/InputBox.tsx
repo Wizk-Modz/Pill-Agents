@@ -1,7 +1,9 @@
-// Ô nhập kiểu Claude Code: một dòng ❯, tự giãn tối đa 8 dòng, có viền trên dưới.
+// Ô nhập dạng capsule: một dòng ❯, tự giãn tối đa 8 dòng, có viền trên dưới.
 import React from 'react';
 import { Box, Text } from 'ink';
 import type { AgentMode } from '../types.js';
+import { fitText } from './format.js';
+import { borderChars, COLORS, GLYPHS, modeColor } from './theme.js';
 
 export type InputState = { value: string; cursor: number; historyIndex: number };
 
@@ -134,8 +136,17 @@ export function reduceInput(
     if (input === 'e') return { state: { ...state, cursor: value.length } };
     if (input === 'p') return { state: moveCursorUp(state, history) };
     if (input === 'n') return { state: moveCursorDown(state, history) };
-    if (input === 'u') return { state: { value: value.slice(cursor), cursor: 0, historyIndex: -1 } };
-    if (input === 'k') return { state: { value: value.slice(0, cursor), cursor, historyIndex: -1 } };
+    if (input === 'u') {
+      // Xoá từ đầu dòng đến con trỏ, giữ nguyên các dòng khác.
+      const lineStart = value.lastIndexOf('\n', cursor - 1) + 1;
+      return { state: { value: value.slice(0, lineStart) + value.slice(cursor), cursor: lineStart, historyIndex: -1 } };
+    }
+    if (input === 'k') {
+      // Xoá từ con trỏ đến cuối dòng, giữ dấu xuống dòng để không dính hai dòng.
+      const nextBreak = value.indexOf('\n', cursor);
+      const lineEnd = nextBreak === -1 ? value.length : nextBreak;
+      return { state: { value: value.slice(0, cursor) + value.slice(lineEnd), cursor, historyIndex: -1 } };
+    }
     return { state };
   }
   if (input && !key.meta && !key.tab) {
@@ -198,12 +209,12 @@ export function layoutInput(value: string, cursor: number, width: number): { chu
 
 // Đếm số dòng hiển thị của ô nhập, giới hạn theo maxLines.
 export function countInputLines(value: string, cursor: number, columns: number, maxLines: number): number {
-  const width = Math.max(10, columns - 2);
+  const width = Math.max(10, columns - 6);
   const layout = layoutInput(value, cursor, width);
   return Math.min(maxLines, layout.chunks.length) + 2;
 }
 
-// Hiển thị ô nhập với viền trên dưới, cuộn nội bộ khi vượt 8 dòng.
+// Hiển thị ô nhập trong khung capsule, cuộn nội bộ khi vượt 8 dòng.
 export function InputBox({
   value,
   cursor,
@@ -221,48 +232,88 @@ export function InputBox({
   placeholder: string;
   maxLines?: number;
 }): React.ReactElement {
-  const width = Math.max(10, columns - 2);
-  const layout = layoutInput(value, cursor, width);
+  const chars = borderChars();
+  const accent = busy ? COLORS.warning : modeColor(mode);
+  const textWidth = Math.max(10, columns - 6);
+  const layout = layoutInput(value, cursor, textWidth);
   const visibleCount = Math.min(maxLines, layout.chunks.length);
   const start = Math.min(
     Math.max(0, layout.cursorChunk - visibleCount + 1),
     Math.max(0, layout.chunks.length - visibleCount),
   );
   const visible = layout.chunks.slice(start, start + visibleCount);
-  const rule = '─'.repeat(Math.max(1, columns));
-  const accent = busy ? 'yellow' : mode === 'plan' ? 'magenta' : 'cyan';
+  const title = busy ? 'đang xử lý' : mode === 'plan' ? 'plan' : 'nhập';
+  const titleText = ` ${title} `;
+  const fill = columns - 3 - titleText.length;
+  const ruleWidth = Math.max(1, columns - 2);
+  const placeholderText = fitText(placeholder, Math.max(1, textWidth - 1));
 
   return (
     <Box flexDirection="column" width={columns}>
-      <Text dimColor>{rule}</Text>
+      {fill >= 1 ? (
+        <Text wrap="truncate-end">
+          <Text color={COLORS.border} dimColor>
+            {chars.tl}
+            {chars.h}
+          </Text>
+          <Text color={accent} bold>
+            {titleText}
+          </Text>
+          <Text color={COLORS.border} dimColor>
+            {chars.h.repeat(fill)}
+            {chars.tr}
+          </Text>
+        </Text>
+      ) : (
+        <Text color={COLORS.border} dimColor wrap="truncate-end">
+          {chars.tl}
+          {chars.h.repeat(ruleWidth)}
+          {chars.tr}
+        </Text>
+      )}
       {visible.map((chunk, index) => {
         const chunkIndex = start + index;
         const isCursor = chunkIndex === layout.cursorChunk;
-        const prefix = chunkIndex === 0 ? '❯ ' : '  ';
+        const prefix = chunkIndex === 0 ? `${GLYPHS.prompt} ` : '  ';
         const before = isCursor ? chunk.text.slice(0, layout.cursorCol) : chunk.text;
         const at = isCursor ? chunk.text.slice(layout.cursorCol, layout.cursorCol + 1) || ' ' : '';
         const after = isCursor ? chunk.text.slice(layout.cursorCol + 1) : '';
+        const cursorExtra = isCursor && layout.cursorCol >= chunk.text.length ? 1 : 0;
+        const pad = Math.max(0, textWidth - chunk.text.length - cursorExtra);
         return (
           <Text key={chunkIndex} wrap="truncate-end">
+            <Text color={COLORS.border} dimColor>
+              {chars.v}{' '}
+            </Text>
             <Text color={accent} bold>
               {prefix}
             </Text>
             {!value && chunkIndex === 0 ? (
               <>
                 <Text inverse> </Text>
-                <Text dimColor>{placeholder}</Text>
+                <Text dimColor>{placeholderText}</Text>
+                <Text>{' '.repeat(Math.max(0, textWidth - 1 - placeholderText.length))}</Text>
               </>
             ) : (
               <>
                 <Text>{before}</Text>
                 {isCursor ? <Text inverse>{at}</Text> : null}
                 <Text>{after}</Text>
+                <Text>{' '.repeat(pad)}</Text>
               </>
             )}
+            <Text color={COLORS.border} dimColor>
+              {' '}
+              {chars.v}
+            </Text>
           </Text>
         );
       })}
-      <Text dimColor>{rule}</Text>
+      <Text color={COLORS.border} dimColor wrap="truncate-end">
+        {chars.bl}
+        {chars.h.repeat(ruleWidth)}
+        {chars.br}
+      </Text>
     </Box>
   );
 }

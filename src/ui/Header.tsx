@@ -1,47 +1,59 @@
-// Header một dòng: tên phiên, model, effort, thư mục và nhánh git.
+// Header một dòng: thương hiệu, chế độ, thư mục và nhánh git.
 import React from 'react';
 import { Box, Text } from 'ink';
 import { homedir } from 'node:os';
 import type { AgentMode } from '../types.js';
 import { fitText, shortenCwd } from './format.js';
+import { borderChars, COLORS, GLYPHS, modeColor } from './theme.js';
 
 export function Header({
   version,
   mode,
-  model,
-  effort,
   cwd,
   branch,
   columns,
 }: {
   version: string;
   mode: AgentMode;
-  model: string;
-  effort?: string;
   cwd: string;
   branch?: string;
   columns: number;
 }): React.ReactElement {
   const label = version.replace(/^pill\s+/i, '');
-  const narrow = columns < 72;
-  const parts = narrow
-    ? [model, branch]
-    : [model, effort, shortenCwd(cwd, homedir()), branch];
-  const details = parts.filter((part): part is string => Boolean(part)).join(' · ');
-  const rule = '─'.repeat(Math.max(1, columns));
+  const narrow = columns < 44;
+  const showVersion = columns >= 100;
+  const brand = `${GLYPHS.brand} PillAgents`;
+  const badge = narrow ? mode.toUpperCase() : `${GLYPHS.badgeLeft} ${mode.toUpperCase()} ${GLYPHS.badgeRight}`;
+  const leftPlain = `${brand}${showVersion ? ` ${label}` : ''} ${badge}`;
+  const metaParts = [shortenCwd(cwd, homedir())];
+  if (branch && columns >= 64) metaParts.push(branch);
+  const meta = metaParts.filter(Boolean).join(' · ');
+  const available = Math.max(10, columns - 2);
+  const metaWidth = available - leftPlain.length - 1;
+  const showMeta = !narrow && metaWidth >= 12;
+  const shownMeta = showMeta ? fitText(meta, metaWidth) : '';
+  const gap = Math.max(1, available - leftPlain.length - shownMeta.length);
+  const rule = borderChars().h.repeat(Math.max(1, columns));
 
   return (
     <Box flexDirection="column" flexShrink={0}>
       <Box paddingX={1}>
         <Text wrap="truncate-end">
-          <Text bold color="cyan">
-            PillAgents {fitText(label, Math.max(8, columns - 28))}
+          <Text bold color={COLORS.accent}>
+            {GLYPHS.brand}{' '}
           </Text>
-          <Text bold color={mode === 'plan' ? 'magenta' : 'green'}>
-            {' '}
-            {mode.toUpperCase()}
+          <Text bold>PillAgents</Text>
+          {showVersion ? <Text dimColor> {label}</Text> : null}
+          <Text> </Text>
+          <Text bold color={modeColor(mode)}>
+            {badge}
           </Text>
-          {details ? <Text dimColor> · {details}</Text> : null}
+          {showMeta ? (
+            <Text dimColor>
+              {' '.repeat(gap)}
+              {shownMeta}
+            </Text>
+          ) : null}
         </Text>
       </Box>
       <Text dimColor>{rule}</Text>

@@ -35,20 +35,22 @@ src/
 ├── tools.ts            6 tool
 ├── agent.ts            Vòng lặp agent
 ├── statusline.ts       Chạy lệnh statusLine, lấy dòng đầu stdout
+├── version.ts          Đọc phiên bản từ package.json
 └── ui/
     ├── App.tsx            Màn hình chính, bố cục, phím/chuột
-    ├── InputBox.tsx       Ô nhập
+    ├── InputBox.tsx       Ô nhập capsule, con trỏ, history
     ├── useKeys.ts         Parse phím thô, chuột, paste
     ├── markdown.ts        Render markdown → ANSI
     ├── Transcript.tsx     Item → dòng, thẻ tool, diff
-    ├── Header.tsx         Header phiên
+    ├── Header.tsx         Header thương hiệu, badge chế độ
     ├── StatusBar.tsx      Footer trạng thái
     ├── Welcome.tsx        Màn hình chào
     ├── QueuePanel.tsx     Bảng hàng đợi
     ├── ApprovalPanel.tsx  Hiển thị hộp duyệt
     ├── approval.ts        Dựng nội dung duyệt
     ├── diff.ts            Diff dòng LCS
-    ├── format.ts          Định dạng token/thời gian/đường dẫn
+    ├── format.ts          Định dạng token/thời gian/đường dẫn/độ rộng
+    ├── theme.ts           Palette, glyph, icon tool, viền ASCII
     ├── git.ts             Đọc nhánh git
     ├── hitTest.ts         Tọa độ chuột → dòng transcript
     ├── useTranscriptLines.ts Cache dòng + bản đồ click
@@ -76,7 +78,7 @@ Dùng `node:test` có sẵn của Node, không cần framework:
 npm test
 ```
 
-85 test, bao gồm:
+102 test, bao gồm:
 
 | Nhóm | Nội dung |
 |---|---|
@@ -89,7 +91,7 @@ npm test
 | Cấu hình | đọc `PILL_MODE`/`mode`, chấp nhận build/plan, bỏ giá trị lạ |
 | Trạng thái | đọc `statusLine`, lấy dòng đầu stdout, JSON gửi qua stdin (gồm `mode`), thư mục chạy, timeout, lệnh lỗi |
 | Diff | nhận diện dòng thay đổi, thêm/bớt, giới hạn và đánh dấu truncated, hai chuỗi rỗng |
-| UI | format token/thời gian/đường dẫn, hit-test chuột, phát hiện lệnh nguy hiểm, hộp duyệt `edit_file`/`bash`/ghi đè, thẻ tool có thời gian và thống kê, header/footer hiện chế độ, gợi ý `/plan` `/build` `/mode` |
+| UI | format token/thời gian/đường dẫn, đo độ rộng ANSI, hit-test chuột, phát hiện lệnh nguy hiểm, hộp duyệt `edit_file`/`bash`/ghi đè (ngắt dòng lệnh dài), thẻ tool có thời gian và thống kê căn phải, header badge/thu gọn, footer tự bỏ số liệu phụ, ô nhập capsule, welcome đầy đủ/gọn, bảng hàng đợi giới hạn theo chiều cao |
 
 Test không cần API key — không nhóm nào gọi mạng.
 
@@ -134,22 +136,22 @@ Mock trả về:
 | Luồng | Cách kiểm |
 |---|---|
 | Welcome | Mở TUI khi chưa gửi gì — thấy tên phiên, mô tả và gợi ý lệnh |
-| Header | Model, effort, thư mục, nhánh git; thu gọn khi terminal hẹp |
-| Chế độ | Bấm `Tab`: header đổi `PLAN`/`BUILD`, viền prompt đổi màu, placeholder đổi; `/plan`, `/build`, `/mode` hoạt động. Đang chạy thì `Tab` bị bỏ qua |
+| Header | Badge `PLAN`/`BUILD`, thư mục, nhánh git; thu gọn khi terminal hẹp |
+| Chế độ | Bấm `Tab`: badge header đổi `PLAN`/`BUILD`, viền và tiêu đề prompt đổi màu, placeholder đổi; `/plan`, `/build`, `/mode` hoạt động. Đang chạy thì `Tab` bị bỏ qua |
 | Plan chỉ đọc | Ở chế độ plan, model chỉ được cấp `read_file`/`grep`/`glob`; thử mock trả `write_file` — phải thấy lỗi `bị khoá ở chế độ plan` và file không được tạo |
 | Kích thước | Chạy ở 80×24 rồi kéo rộng 120×40 — không tràn footer, transcript tự co |
 | Gõ nhanh không mất ký tự | Gõ liên tục 30+ ký tự |
 | History | Gửi tin, bấm `↑` — phải hiện lại tin cũ, **không** hiện `^[[A` |
-| Cuộn | `PageUp`/`PageDown`, lăn chuột; footer báo `↑ đã cuộn N dòng` |
+| Cuộn | `PageUp`/`PageDown`, lăn chuột; footer báo `↑ N dòng · PageDown` |
 | Duyệt tool | Gửi "chạy lệnh", bấm `y`; thử `n`, `Esc`, và `d` để mở rộng |
 | Diff khi duyệt | Mock trả `edit_file` — hộp duyệt phải hiện `+N −M`, dòng thêm/xoá đúng màu |
 | Thẻ tool | Sau khi chạy, thẻ hiện thời gian, số dòng/kết quả, `exit N` với bash |
 | Mở rộng tool | Click tiêu đề thẻ hoặc `Ctrl+T`; marker đổi `▸`/`▾` |
 | Thinking | Mock trả `reasoning_content`; click tiêu đề hoặc `Ctrl+O` để mở/đóng |
-| Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → bảng hàng đợi và `⏳ 1 chờ`; bấm `Esc`, lượt hiện tại dừng nhưng tin chờ vẫn chạy tiếp |
+| Xếp hàng | Trong lúc agent chạy, gõ tin mới + Enter → bảng hàng đợi và `n tin chờ` ở footer; bấm `Esc`, lượt hiện tại dừng nhưng tin chờ vẫn chạy tiếp |
 | Gợi ý lệnh | Gõ `/`, dùng `Tab`/`↑↓`, `Esc` đóng |
 | Token | Footer hiện `↑N ↓N` sau mỗi lượt |
-| Dòng trạng thái | Đặt `statusLine` trong `settings.json`, gửi một tin — footer phải hiện dòng đầu stdout của lệnh, spinner và `⏳ n chờ` vẫn nối sau |
+| Dòng trạng thái | Đặt `statusLine` trong `settings.json`, gửi một tin — footer phải hiện dòng đầu stdout của lệnh, spinner và `n tin chờ` vẫn nối sau |
 | Markdown inline | Cho mock trả dòng có `` `code` ``, `**đậm**`, `*nghiêng*`, `***đậm nghiêng***`, `~~gạch ngang~~` — transcript phải tô đúng style và không còn dấu markdown |
 | Markdown khối | Cho mock trả code fence có dòng thụt lề và dòng rất dài, tiêu đề `#`..`######`, quote `> > >` — code phải cắt đúng khung và không tô màu, sáu cấp tiêu đề phải khác nhau, quote phải hiện vạch theo cấp |
 | Spinner | Gửi "chạy lệnh" rồi để hộp duyệt mở — footer phải đổi khung braille liên tục, dừng khi lượt kết thúc |
@@ -172,6 +174,7 @@ if (extras.reasoning_content) options.onReasoning?.(extras.reasoning_content);
 - **Comment**: mỗi hàm một dòng mô tả chức năng, tiếng Việt có dấu đầy đủ
 - **Tên**: `camelCase` cho biến/hàm, `PascalCase` cho class/component, `SCREAMING_SNAKE` cho hằng
 - **File > 300 dòng**: cân nhắc tách module
+- **Giao diện**: ưu tiên `COLORS`/`GLYPHS` trong `src/ui/theme.ts`; không hardcode mã màu mới rải rác
 - **Tool mới**: khai báo trong `createTools()`, xem [tools.md](tools.md#thêm-tool-mới)
 
 ## Gỡ lỗi
@@ -213,7 +216,7 @@ PILL_API_KEY=... PILL_BASE_URL=... node dist/src/main.js 2>err.log
 Lệnh trong `statusLine` phải exit 0 và in **dòng đầu không rỗng** ra stdout trong vòng 5 giây. Lệnh lỗi, không in gì, hoặc quá hạn thì footer quay về dòng mặc định và không có thông báo lỗi — kiểm tra bằng cách chạy lệnh thủ công với JSON mẫu:
 
 ```bash
-echo '{"version":"pill 0.1.0","model":"gpt-4o-mini","mode":"build","cwd":"/du-an","tokens":{"prompt":0,"completion":0},"busy":false,"queued":0}' | sh ~/.pill/statusline.sh
+echo '{"version":"pill 1.0.0","model":"gpt-4o-mini","mode":"build","cwd":"/du-an","tokens":{"prompt":0,"completion":0},"busy":false,"queued":0}' | sh ~/.pill/statusline.sh
 ```
 
 ## Đóng góp
