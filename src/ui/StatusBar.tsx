@@ -15,7 +15,7 @@ export function StatusBar({
   elapsedMs,
   busy,
   queueCount,
-  bashTrusted,
+  autoTrusted,
   statusText,
   spinnerFrame,
   scrolledLines,
@@ -30,7 +30,7 @@ export function StatusBar({
   elapsedMs: number;
   busy: boolean;
   queueCount: number;
-  bashTrusted?: boolean;
+  autoTrusted?: boolean;
   statusText?: string;
   spinnerFrame: number;
   scrolledLines: number;
@@ -103,11 +103,11 @@ export function StatusBar({
       </Text>,
     );
   }
-  if (bashTrusted) {
-    const text = columns < 72 ? ' · bash ✓' : ' · bash tự duyệt';
+  if (autoTrusted) {
+    const text = columns < 72 ? ' · auto ✓' : ' · tự duyệt mọi tool';
     suffixText += text;
     suffix.push(
-      <Text key="trust" color={COLORS.warning}>
+      <Text key="auto" color={COLORS.auto}>
         {text}
       </Text>,
     );

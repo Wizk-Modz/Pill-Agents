@@ -158,6 +158,18 @@ export function parseInput(buffer: string, flush: boolean): { events: KeyEvent[]
         continue;
       }
 
+      // Alt+phím: terminal gửi ESC rồi ký tự thường. Bỏ qua "[" và "O" vì đó là đầu
+      // chuỗi CSI/SS3 chưa khớp, phải chờ thêm byte thay vì đoán thành Alt.
+      if (rest.length > 1 && rest[1] !== '[' && rest[1] !== 'O') {
+        const codePoint = rest.codePointAt(1)!;
+        if (codePoint >= 32 && codePoint !== 127) {
+          const altChar = String.fromCodePoint(codePoint);
+          events.push({ type: 'key', key: makeKey({ meta: true }), char: altChar.toLowerCase() });
+          index += 1 + altChar.length;
+          continue;
+        }
+      }
+
       if (!flush && (rest.length === 1 || isIncomplete(rest))) {
         return { events, rest };
       }

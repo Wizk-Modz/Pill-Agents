@@ -33,9 +33,9 @@ Chưa đọc /du-an/src/a.ts trong phiên này; dùng Read trước khi ghi đè
 
 ## Duyệt tool
 
-Hộp duyệt hiện `y` (chạy một lần), `n`/`Esc` (từ chối), `d` (mở rộng nội dung). Riêng lệnh `bash` thường có thêm `a`: bật tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lựa chọn này chỉ áp dụng cho `bash`, không áp dụng cho `Write`/`Edit`.
+Hộp duyệt hiện `y` (chạy một lần), `n`/`Esc` (từ chối), `d` (mở rộng nội dung). `Alt+M` bật chế độ tự duyệt cho mọi tool cần duyệt — `Write`, `Edit` và `bash` chạy thẳng, không hỏi lại. Lệnh `bash` thường còn có thêm `a` để bật ngay từ hộp duyệt.
 
-Các lệnh bị `isDangerousCommand()` đánh dấu — ví dụ `rm`, `sudo`, `git reset --hard`, force push, chạy script từ `curl | sh` — **luôn** mở hộp duyệt và không hiện `[a]`. `/trust on|off` xem hoặc đổi trạng thái tự duyệt; `/clear` cũng tắt. Khi bật, footer hiện `bash tự duyệt`.
+Các lệnh bị `isDangerousCommand()` đánh dấu — ví dụ `rm`, `sudo`, `git reset --hard`, force push, chạy script từ `curl | sh` — **luôn** mở hộp duyệt, không hiện `[a]` và không hiện gợi ý `Alt+M`. `canAutoApprove()` chặn đúng nhóm này nên bật tự duyệt không làm mất chốt an toàn. `/auto on|off` xem hoặc đổi trạng thái; `/clear` cũng tắt. Khi bật, header hiện badge `AUTO` và footer hiện `tự duyệt mọi tool`.
 
 Ở chế độ `plan`, model chỉ được cấp `Read`, `grep` và `Glob`. Ba tool còn lại bị khoá; nếu model vẫn gọi, agent trả lỗi thay vì thực thi. Agent lọc tool ở cả danh sách gửi API lẫn lúc chạy, nên không thể vượt giới hạn bằng tool call tự phát.
 

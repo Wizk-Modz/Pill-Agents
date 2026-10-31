@@ -63,6 +63,14 @@ export function canTrustBash(call: ToolCall): boolean {
   return command !== undefined && !isDangerousCommand(command);
 }
 
+// Kiểm tra tool có được tự duyệt khi bật chế độ auto: mọi tool cần duyệt đều qua,
+// trừ lệnh bash nguy hiểm — nhóm đó luôn phải hỏi thủ công.
+export function canAutoApprove(call: ToolCall, auto: boolean): boolean {
+  if (!auto) return false;
+  const command = bashCommand(call);
+  return command === undefined || !isDangerousCommand(command);
+}
+
 // Wrap nội dung thành các dòng ANSI có tiền tố, giới hạn số dòng.
 function textPreview(
   text: string,
@@ -229,5 +237,9 @@ export function buildApprovalLines(
   }
 
   lines.push(...approvalActions(width, options.expanded, canTrustBash(call)));
+  // Lệnh nguy hiểm không tự duyệt được, nên không mời bật chế độ auto.
+  if (canAutoApprove(call, true)) {
+    lines.push(paintSegments([{ text: fitText('  Alt+M bật tự duyệt cho mọi tool', width), dim: true }]));
+  }
   return lines;
 }

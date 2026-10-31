@@ -7,7 +7,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToString } from 'ink';
 import type { ToolCall } from '../src/types.js';
-import { buildApprovalLines, canAutoApproveBash, canTrustBash, isDangerousCommand } from '../src/ui/approval.js';
+import { buildApprovalLines, canAutoApprove, canAutoApproveBash, canTrustBash, isDangerousCommand } from '../src/ui/approval.js';
 import { applySuggestion, suggestCommands } from '../src/ui/commands.js';
 import { fitText, formatDuration, formatElapsed, formatTokens, shortenCwd } from '../src/ui/format.js';
 import { Header } from '../src/ui/Header.js';
@@ -190,6 +190,52 @@ test('buildApprovalLines chỉ mời tự duyệt bash cho lệnh thường', ()
     options,
   ).map(plain).join('\n');
   assert.ok(!edit.includes('[a]'));
+});
+
+test('canAutoApprove chỉ chặn lệnh bash nguy hiểm, mọi tool khác đều qua', () => {
+  const normal = call('bash', { command: 'npm test' });
+  const dangerous = call('bash', { command: 'rm -rf build' });
+  const edit = call('Edit', { file_path: '/du-an/a.ts', old_string: 'a', new_string: 'b' });
+  const write = call('Write', { file_path: '/du-an/a.txt', content: 'x' });
+  const read = call('Read', { file_path: '/du-an/a.ts' });
+
+  // Tắt thì không tool nào tự duyệt.
+  for (const item of [normal, edit, write, read]) assert.equal(canAutoApprove(item, false), false);
+  // Bật thì mọi tool qua, trừ lệnh nguy hiểm.
+  assert.equal(canAutoApprove(normal, true), true);
+  assert.equal(canAutoApprove(edit, true), true);
+  assert.equal(canAutoApprove(write, true), true);
+  assert.equal(canAutoApprove(read, true), true);
+  assert.equal(canAutoApprove(dangerous, true), false);
+});
+
+test('buildApprovalLines mời Alt+M cho tool thường nhưng không mời với lệnh nguy hiểm', () => {
+  const options = { width: 80, expanded: false, cwd: process.cwd(), maxPreview: 6 };
+  const edit = buildApprovalLines(
+    call('Edit', { file_path: '/du-an/a.ts', old_string: 'a', new_string: 'b' }),
+    options,
+  ).map(plain).join('\n');
+  assert.ok(edit.includes('Alt+M'));
+
+  const dangerous = buildApprovalLines(call('bash', { command: 'rm -rf build' }), options).map(plain).join('\n');
+  assert.ok(!dangerous.includes('Alt+M'));
+});
+
+test('Header hiện badge AUTO khi bật tự duyệt', () => {
+  const header = (auto: boolean) =>
+    plain(
+      renderToString(
+        React.createElement(Header, {
+          version: 'pill 0.1.0',
+          mode: 'build',
+          auto,
+          cwd: '/du-an',
+          columns: 80,
+        }),
+      ),
+    );
+  assert.ok(!header(false).includes('AUTO'));
+  assert.ok(header(true).includes('BUILD AUTO'));
 });
 
 test('buildApprovalLines tách hành động duyệt khi terminal hẹp', () => {
@@ -465,7 +511,7 @@ test('StatusBar giữ số tin chờ và bỏ gợi ý Esc khi terminal hẹp', 
   assert.ok(status(80).includes('12 tool'));
 });
 
-test('StatusBar hiện trạng thái tự duyệt bash', () => {
+test('StatusBar hiện trạng thái tự duyệt mọi tool', () => {
   const output = plain(
     renderToString(
       React.createElement(StatusBar, {
@@ -477,7 +523,7 @@ test('StatusBar hiện trạng thái tự duyệt bash', () => {
         elapsedMs: 0,
         busy: false,
         queueCount: 0,
-        bashTrusted: true,
+        autoTrusted: true,
         spinnerFrame: 0,
         scrolledLines: 0,
         columns: 80,
@@ -485,7 +531,7 @@ test('StatusBar hiện trạng thái tự duyệt bash', () => {
       { columns: 80 },
     ),
   );
-  assert.ok(output.includes('bash tự duyệt'));
+  assert.ok(output.includes('tự duyệt mọi tool'));
 });
 
 test('buildApprovalLines ngắt dòng lệnh bash không lặp dấu $', () => {

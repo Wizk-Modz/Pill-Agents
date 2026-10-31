@@ -87,6 +87,26 @@ test('parseInput tách Ctrl+C và Enter đúng', () => {
   assert.ok(enter.type === 'key' && enter.key.return);
 });
 
+test('parseInput nhận diện Alt+phím thành meta, không phải Escape', () => {
+  const altM = firstKey('\x1bm');
+  assert.ok(altM.type === 'key' && altM.key.meta && altM.char === 'm');
+
+  // Alt+chữ hoa vẫn quy về chữ thường để so khớp phím tắt.
+  const upper = firstKey('\x1bM');
+  assert.ok(upper.type === 'key' && upper.key.meta && upper.char === 'm');
+
+  // Alt+ký tự ngoài ASCII (tiếng Việt) giữ nguyên code point.
+  const vietnamese = firstKey('\x1bđ');
+  assert.ok(vietnamese.type === 'key' && vietnamese.key.meta && vietnamese.char === 'đ');
+
+  // ESC [ vẫn là đầu chuỗi CSI, phải chờ thêm byte chứ không thành Alt+[.
+  const waiting = parseInput('\x1b[', false);
+  assert.equal(waiting.events.length, 0);
+  assert.equal(waiting.rest, '\x1b[');
+  const arrow = parseInput(`${waiting.rest}1;2A`, false);
+  assert.ok(arrow.events[0]!.type === 'key' && arrow.events[0]!.key.upArrow);
+});
+
 test('parseInput giữ nguyên tiếng Việt có dấu', () => {
   const event = firstKey('xin chào');
   assert.equal(event.type, 'text');

@@ -4,17 +4,19 @@ import { Box, Text } from 'ink';
 import { homedir } from 'node:os';
 import type { AgentMode } from '../types.js';
 import { fitText, shortenCwd } from './format.js';
-import { borderChars, COLORS, GLYPHS, modeColor } from './theme.js';
+import { borderChars, COLORS, GLYPHS, modeBadge, modeColor } from './theme.js';
 
 export function Header({
   version,
   mode,
+  auto = false,
   cwd,
   branch,
   columns,
 }: {
   version: string;
   mode: AgentMode;
+  auto?: boolean;
   cwd: string;
   branch?: string;
   columns: number;
@@ -23,7 +25,7 @@ export function Header({
   const narrow = columns < 44;
   const showVersion = columns >= 100;
   const brand = `${GLYPHS.brand} PillAgents`;
-  const badge = narrow ? mode.toUpperCase() : `${GLYPHS.badgeLeft} ${mode.toUpperCase()} ${GLYPHS.badgeRight}`;
+  const badge = modeBadge(mode, auto, narrow);
   const leftPlain = `${brand}${showVersion ? ` ${label}` : ''} ${badge}`;
   const metaParts = [shortenCwd(cwd, homedir())];
   if (branch && columns >= 64) metaParts.push(branch);
@@ -45,7 +47,7 @@ export function Header({
           <Text bold>PillAgents</Text>
           {showVersion ? <Text dimColor> {label}</Text> : null}
           <Text> </Text>
-          <Text bold color={modeColor(mode)}>
+          <Text bold color={auto ? COLORS.auto : modeColor(mode)}>
             {badge}
           </Text>
           {showMeta ? (

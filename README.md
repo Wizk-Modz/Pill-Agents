@@ -56,9 +56,9 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 - **Header**: thương hiệu, badge `▐ BUILD ▌` / `▐ PLAN ▌`, thư mục và nhánh git; tự thu gọn khi hẹp.
 - **Welcome**: logo capsule, mô tả và gợi ý `/help`, `Tab`; chuyển bản gọn khi terminal thấp hoặc hẹp.
 - **Transcript**: tin nhắn `❯`, markdown, thinking `✻`, thẻ tool có icon + tên gốc, kết quả/diff nằm dưới rail `│`.
-- **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập; hiện tối đa 2 tin khi thấp, 3 tin khi cao; hộp duyệt có viền vàng, lệnh bash thường có thêm lựa chọn tự duyệt cả phiên.
+- **Hàng đợi / hộp duyệt**: nằm ngay trên ô nhập; hiện tối đa 2 tin khi thấp, 3 tin khi cao; hộp duyệt có viền vàng, kèm gợi ý `Alt+M` để bật chế độ tự duyệt.
 - **Ô nhập**: khung capsule với tiêu đề `nhập` / `plan` / `đang xử lý`.
-- **Footer**: model, effort, token, số tool, thời gian, trạng thái `bash tự duyệt` và gợi ý phím; số liệu phụ tự bỏ khi hẹp để spinner và số tin chờ luôn hiện.
+- **Footer**: model, effort, token, số tool, thời gian, trạng thái `tự duyệt mọi tool` và gợi ý phím; số liệu phụ tự bỏ khi hẹp để spinner và số tin chờ luôn hiện.
 
 ## Phím tắt
 
@@ -79,7 +79,8 @@ Bố cục một cột, tự co theo kích thước terminal (kiểm thử ở 8
 | Click tiêu đề Suy nghĩ/tool | Mở/đóng riêng mục đó |
 | `d` (khi chờ duyệt) | Xem đầy đủ / thu gọn nội dung duyệt |
 | `y` / `n` (khi chờ duyệt) | Đồng ý / từ chối tool |
-| `a` (khi chờ duyệt bash thường) | Tự duyệt mọi lệnh bash còn lại trong phiên |
+| `Alt+M` | Bật/tắt chế độ tự duyệt mọi tool (không hỏi khi chạy) |
+| `a` (khi chờ duyệt bash thường) | Bật chế độ tự duyệt ngay từ hộp duyệt |
 | `Esc` | Huỷ lượt đang chạy; tin trong hàng đợi vẫn chạy tiếp |
 | `Ctrl+C` | Xoá input / thoát |
 | `Ctrl+D` | Thoát |
@@ -88,9 +89,15 @@ Gõ tin nhắn trong lúc agent đang chạy sẽ **xếp hàng**, hiện trong 
 
 Model có hỗ trợ `reasoning_content` sẽ hiển thị khối **✻ Suy nghĩ** kèm thời gian suy nghĩ. Thẻ tool hiện thời gian chạy, số dòng/kết quả, diff `+N −M` với `Edit`, mã thoát với `bash`, và kết quả thu gọn mở rộng được bằng click hoặc `Ctrl+T`.
 
-Khi agent chạy nhiều lệnh shell, hộp duyệt bash thường có thêm `[a]`: bấm `a` để tự duyệt mọi lệnh bash còn lại trong phiên, không hỏi lại từng lệnh. Lệnh nguy hiểm như `rm`, `sudo`, force push hay chạy script từ mạng **luôn** mở hộp duyệt và không hiện `[a]`. Khi bật, footer hiện `bash tự duyệt`; `/trust off` tắt ngay, `/clear` cũng tắt. Tự duyệt chỉ áp dụng cho `bash`, không áp dụng cho `Write`/`Edit`.
+### Chế độ tự duyệt
 
-Footer hiển thị model, effort (khi ≥ 80 cột), token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; phiên bản chỉ hiện khi terminal rộng (≥ 110 cột). Khi hẹp, footer tự bỏ bớt số tool/thời gian để spinner và số tin chờ luôn còn chỗ. `/clear` đặt lại token về 0. Khi bật tự duyệt bash, footer nối thêm `bash tự duyệt`. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; dưới 70 cột rút gọn còn `đang xử lý`. Khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
+Bấm `Alt+M` bất cứ lúc nào — kể cả khi agent đang chạy — để bật/tắt chế độ tự duyệt. Khi bật, `Write`, `Edit` và `bash` chạy ngay không hỏi. Header đổi badge thành `BUILD AUTO` (hoặc `PLAN AUTO`) màu vàng, footer nối thêm `tự duyệt mọi tool`, và mỗi lần bật/tắt đều có dòng thông báo trong hội thoại.
+
+**Lệnh nguy hiểm vẫn luôn hỏi.** `rm`, `sudo`, `git reset --hard`, force push, `curl | sh`… do `isDangerousCommand()` đánh dấu sẽ mở hộp duyệt như thường và không hiện gợi ý `Alt+M`, vì đó đúng là nhóm cần người xem trước.
+
+Trong hộp duyệt còn có `[a]` cho lệnh bash thường — cùng bật chế độ này, tiện khi đang đứng giữa hộp duyệt. `/auto on|off` (tên cũ `/trust`) cũng đổi được, và `/clear` tắt chế độ cùng hội thoại.
+
+Footer hiển thị model, effort (khi ≥ 80 cột), token đã dùng trong phiên (`↑` prompt, `↓` completion), số tool, thời gian lượt đang chạy và số tin chờ; phiên bản chỉ hiện khi terminal rộng (≥ 110 cột). Khi hẹp, footer tự bỏ bớt số tool/thời gian để spinner và số tin chờ luôn còn chỗ. `/clear` đặt lại token về 0. Khi bật tự duyệt, footer nối thêm `tự duyệt mọi tool`. Khi agent đang chạy, footer hiện spinner braille kèm `đang xử lý (Esc huỷ)`; dưới 70 cột rút gọn còn `đang xử lý`. Khi cuộn lên, footer báo số dòng đã cuộn và cách về cuối. Gợi ý phím bên phải tự ẩn khi không đủ chỗ để tránh chồng chữ.
 
 Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), cấu hình `statusLine` trong `settings.json` — PillAgents chạy lệnh của bạn và lấy dòng đầu stdout:
 
@@ -105,7 +112,7 @@ Muốn footer hiện thông tin riêng (nhánh git, thư mục, chi phí…), c�
 
 Lệnh nhận JSON của phiên qua stdin (`model`, `effort`, `mode`, `cwd`, `tokens`, `busy`, `queued`). Chi tiết và script mẫu: [docs/configuration.md](docs/configuration.md#dòng-trạng-thái-tự-cấu-hình).
 
-Lệnh: `/plan`, `/build`, `/mode`, `/clear`, `/trust on|off`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
+Lệnh: `/plan`, `/build`, `/mode`, `/auto on|off`, `/clear`, `/model <tên>`, `/effort <mức>`, `/help`, `/exit`.
 
 ## Chế độ plan và build
 

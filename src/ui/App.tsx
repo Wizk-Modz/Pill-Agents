@@ -16,7 +16,7 @@ import { StatusBar } from './StatusBar.js';
 import { Welcome } from './Welcome.js';
 import { QueuePanel, queuePanelHeight } from './QueuePanel.js';
 import { ApprovalPanel } from './ApprovalPanel.js';
-import { buildApprovalLines, canAutoApproveBash, canTrustBash } from './approval.js';
+import { buildApprovalLines, canAutoApprove, canTrustBash } from './approval.js';
 import { readGitBranch } from './git.js';
 import { hitTestColumn, hitTestLine } from './hitTest.js';
 import { SPINNER_FRAMES } from './format.js';
@@ -31,6 +31,9 @@ const SPINNER_INTERVAL_MS = 120;
 const WHEEL_LINES = 3;
 const HEADER_HEIGHT = 2;
 const FOOTER_HEIGHT = 1;
+
+const AUTO_ON_MESSAGE = 'Đã bật tự duyệt: Write, Edit và bash chạy không hỏi. Lệnh nguy hiểm vẫn hỏi; Alt+M để tắt.';
+const AUTO_OFF_MESSAGE = 'Đã tắt tự duyệt: mọi tool cần duyệt lại hỏi từng lần.';
 
 // Màn hình chính của PillAgents.
 export function App({
@@ -55,7 +58,7 @@ export function App({
   const [busy, setBusy] = useState(false);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [approvalExpanded, setApprovalExpanded] = useState(false);
-  const [bashTrusted, setBashTrusted] = useState(false);
+  const [autoTrusted, setAutoTrusted] = useState(false);
   const [scrollTop, setScrollTop] = useState<number | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
@@ -78,7 +81,7 @@ export function App({
   // useEffect, để tránh ghi đè bằng giá trị cũ khi có nhiều cập nhật trong cùng một frame.
   const pendingRef = useRef<PendingApproval | null>(null);
   const busyRef = useRef(false);
-  const bashTrustRef = useRef(false);
+  const autoTrustRef = useRef(false);
   const inputRef = useRef(input);
   const modeRef = useRef(config.mode);
   const scrollRef = useRef<number | null>(null);
@@ -101,9 +104,9 @@ export function App({
     pendingRef.current = value;
     setPendingApproval(value);
   }, []);
-  const setBashTrustSync = useCallback((value: boolean) => {
-    bashTrustRef.current = value;
-    setBashTrusted(value);
+  const setAutoTrustSync = useCallback((value: boolean) => {
+    autoTrustRef.current = value;
+    setAutoTrusted(value);
   }, []);
   const setScrollSync = useCallback((value: number | null) => {
     scrollRef.current = value;
@@ -128,6 +131,13 @@ export function App({
     const entry = { ...item, id: idRef.current } as TranscriptItem;
     setItems((current) => [...current, entry]);
   }, []);
+
+  // Bật/tắt tự duyệt mọi tool; đổi được cả khi agent đang chạy vì lượt sau đọc ref này.
+  const toggleAutoTrust = useCallback(() => {
+    const next = !autoTrustRef.current;
+    setAutoTrustSync(next);
+    pushItem({ kind: 'info', text: next ? AUTO_ON_MESSAGE : AUTO_OFF_MESSAGE });
+  }, [pushItem, setAutoTrustSync]);
 
   // Cập nhật input đồng thời cả state và ref để không rơi ký tự khi gõ nhanh.
   const applyInput = useCallback((next: InputState) => {
@@ -256,9 +266,9 @@ export function App({
         },
         approve: (call: ToolCall) =>
           new Promise<boolean>((resolve) => {
-            // Lệnh bash thường đã được tin cậy trong phiên thì chạy luôn; lệnh nguy hiểm
-            // vẫn đi qua hộp duyệt vì canAutoApproveBash trả false.
-            if (canAutoApproveBash(call, bashTrustRef.current)) {
+            // Bật tự duyệt thì mọi tool chạy luôn; lệnh nguy hiểm vẫn đi qua hộp duyệt
+            // vì canAutoApprove trả false cho nhóm đó.
+            if (canAutoApprove(call, autoTrustRef.current)) {
               resolve(true);
               return;
             }
@@ -302,17 +312,17 @@ export function App({
         return true;
       }
       if (command === '/clear') {
-        const wasTrusted = bashTrustRef.current;
+        const wasTrusted = autoTrustRef.current;
         agent.reset();
         toolState.readFiles.clear();
         setItems([]);
         invalidate();
-        setBashTrustSync(false);
+        setAutoTrustSync(false);
         setTokenUsage({ prompt: 0, completion: 0, last: 0 });
         setScrollSync(null);
         pushItem({
           kind: 'info',
-          text: wasTrusted ? 'Đã xoá hội thoại và tắt tự duyệt bash.' : 'Đã xoá hội thoại.',
+          text: wasTrusted ? 'Đã xoá hội thoại và tắt tự duyệt.' : 'Đã xoá hội thoại.',
         });
         return true;
       }
@@ -334,29 +344,27 @@ export function App({
         });
         return true;
       }
-      if (command === '/trust') {
+      if (command === '/trust' || command === '/auto') {
         const value = rest.join(' ').trim().toLowerCase();
+        const howTo = command === '/auto' ? '/auto on|off' : '/trust on|off';
         if (!value) {
           pushItem({
             kind: 'info',
-            text: `Tự duyệt bash: ${bashTrustRef.current ? 'bật' : 'tắt'}. Dùng /trust on|off để đổi.`,
+            text: `Tự duyệt: ${autoTrustRef.current ? 'bật' : 'tắt'}. Dùng ${howTo} hoặc Alt+M để đổi.`,
           });
           return true;
         }
         if (value === 'on') {
-          setBashTrustSync(true);
-          pushItem({
-            kind: 'info',
-            text: 'Đã bật tự duyệt bash. Lệnh nguy hiểm vẫn hỏi; /trust off để tắt.',
-          });
+          setAutoTrustSync(true);
+          pushItem({ kind: 'info', text: AUTO_ON_MESSAGE });
           return true;
         }
         if (value === 'off') {
-          setBashTrustSync(false);
-          pushItem({ kind: 'info', text: 'Đã tắt tự duyệt bash.' });
+          setAutoTrustSync(false);
+          pushItem({ kind: 'info', text: AUTO_OFF_MESSAGE });
           return true;
         }
-        pushItem({ kind: 'error', text: `Giá trị không hợp lệ: ${value}. Dùng /trust on hoặc /trust off.` });
+        pushItem({ kind: 'error', text: `Giá trị không hợp lệ: ${value}. Dùng ${howTo}.` });
         return true;
       }
       if (command === '/model') {
@@ -390,14 +398,14 @@ export function App({
       if (command === '/help') {
         pushItem({
           kind: 'info',
-          text: 'Enter gửi • Tab đổi chế độ plan/build • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • a (khi chờ duyệt bash) tự duyệt cả phiên • Ctrl+D thoát • /plan /build /mode /clear /trust /model /effort /help /exit',
+          text: 'Enter gửi • Tab đổi chế độ plan/build • Alt+M bật/tắt tự duyệt mọi tool • \\ + Enter hoặc Ctrl+J xuống dòng • ↑/↓ lịch sử lệnh • PageUp/PageDown cuộn • lăn chuột cuộn • Esc huỷ lượt • Ctrl+C xoá input/thoát • Ctrl+O mở/đóng thinking • Ctrl+T mở/đóng kết quả tool • click tiêu đề Thinking/tool để mở/đóng • a (khi chờ duyệt bash) tự duyệt cả phiên • Ctrl+D thoát • /plan /build /mode /auto /clear /trust /model /effort /help /exit',
         });
         return true;
       }
       pushItem({ kind: 'error', text: `Lệnh không hỗ trợ: ${command}` });
       return true;
     },
-    [agent, config, exit, invalidate, pushItem, setBashTrustSync, setMode, setScrollSync],
+    [agent, config, exit, invalidate, pushItem, setAutoTrustSync, setMode, setScrollSync],
   );
 
   // Gửi tin nhắn: chạy ngay nếu rảnh, xếp hàng nếu đang bận.
@@ -596,26 +604,33 @@ export function App({
         return;
       }
 
-      // Khi chờ duyệt: y/n/Esc trả lời, a tự duyệt bash, d mở rộng, phím khác bị chặn.
+      // Khi chờ duyệt: y/n/Esc trả lời, a hoặc Alt+M tự duyệt, d mở rộng, phím khác bị chặn.
       if (pendingRef.current) {
         const text = event.type === 'key' ? event.char : event.type === 'text' ? event.text : '';
         const answer = text.toLowerCase();
         const escape = event.type === 'key' && event.key.escape;
+        const meta = event.type === 'key' && event.key.meta;
         const plain = event.type === 'text' || (event.type === 'key' && !event.key.ctrl && !event.key.meta);
         const entry = pendingRef.current;
         if (plain && answer === 'd') {
           setApprovalExpanded((current) => !current);
           return;
         }
-        if (plain && answer === 'a' && canTrustBash(entry.call)) {
-          setBashTrustSync(true);
+        // Alt+M bật tự duyệt cho mọi tool; lệnh nguy hiểm vẫn hỏi nên chỉ áp dụng khi được phép.
+        if (meta && answer === 'm' && canAutoApprove(entry.call, true)) {
+          setAutoTrustSync(true);
           setPendingSync(null);
           setApprovalExpanded(false);
           entry.resolve(true);
-          pushItem({
-            kind: 'info',
-            text: 'Đã bật tự duyệt bash. Lệnh nguy hiểm vẫn hỏi; /trust off để tắt.',
-          });
+          pushItem({ kind: 'info', text: AUTO_ON_MESSAGE });
+          return;
+        }
+        if (plain && answer === 'a' && canTrustBash(entry.call)) {
+          setAutoTrustSync(true);
+          setPendingSync(null);
+          setApprovalExpanded(false);
+          entry.resolve(true);
+          pushItem({ kind: 'info', text: AUTO_ON_MESSAGE });
           return;
         }
         if (answer === 'y' || answer === 'n' || escape) {
@@ -634,6 +649,12 @@ export function App({
       }
 
       const { key, char } = event;
+
+      // Alt+M bật/tắt tự duyệt mọi tool, dùng được cả khi agent đang chạy.
+      if (key.meta && char === 'm') {
+        toggleAutoTrust();
+        return;
+      }
 
       if (key.ctrl && char === 'o') {
         toggleThinking();
@@ -717,11 +738,12 @@ export function App({
       history,
       pushItem,
       scrollBy,
-      setBashTrustSync,
+      setAutoTrustSync,
       setPendingSync,
       submit,
       suggestions,
       suggestionIndex,
+      toggleAutoTrust,
       toggleMode,
       toggleThinking,
       toggleTools,
@@ -738,6 +760,7 @@ export function App({
       <Header
         version={version}
         mode={mode}
+        auto={autoTrusted}
         cwd={config.cwd}
         branch={gitBranch}
         columns={columns}
@@ -804,7 +827,7 @@ export function App({
         elapsedMs={busy ? elapsedMs : 0}
         busy={busy}
         queueCount={queue.length}
-        bashTrusted={bashTrusted}
+        autoTrusted={autoTrusted}
         statusText={statusText}
         spinnerFrame={spinnerFrame}
         scrolledLines={scrolledLines}

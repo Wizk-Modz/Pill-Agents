@@ -27,20 +27,20 @@ Một lượt (turn) bắt đầu khi người dùng gửi tin nhắn và kết 
 | `src/tools.ts` | 6 tool theo quy ước Claude Code: `Read`/`Write`/`Edit`/`Glob`, `bash`, `grep` | 340 |
 | `src/agent.ts` | Vòng lặp agent, chọn tool theo chế độ, quản lý hội thoại, lưu phiên | 314 |
 | `src/statusline.ts` | Chạy lệnh statusLine trong `settings.json` | 72 |
-| `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn, tự duyệt bash | 803 |
+| `src/ui/App.tsx` | Màn hình chính, bố cục, xử lý phím/chuột, xếp hàng tin nhắn, tự duyệt mọi tool | 838 |
 | `src/ui/InputBox.tsx` | Ô nhập capsule nhiều dòng, logic con trỏ, history | 319 |
-| `src/ui/useKeys.ts` | Parse phím thô, chuột và paste từ stdin | 257 |
+| `src/ui/useKeys.ts` | Parse phím thô, chuột, paste và Alt+phím từ stdin | 269 |
 | `src/ui/markdown.ts` | Render markdown thành chuỗi ANSI | 408 |
 | `src/ui/Transcript.tsx` | Item hội thoại thành dòng, thẻ tool và diff | 240 |
-| `src/ui/Header.tsx` | Header thương hiệu, badge chế độ, thư mục, nhánh git | 62 |
-| `src/ui/StatusBar.tsx` | Footer trạng thái, token, thời gian, tự duyệt bash, gợi ý phím | 152 |
+| `src/ui/Header.tsx` | Header thương hiệu, badge chế độ (kèm AUTO), thư mục, nhánh git | 64 |
+| `src/ui/StatusBar.tsx` | Footer trạng thái, token, thời gian, tự duyệt, gợi ý phím | 152 |
 | `src/ui/Welcome.tsx` | Màn hình chào capsule khi phiên trống | 61 |
 | `src/ui/QueuePanel.tsx` | Bảng tin nhắn đang xếp hàng | 42 |
 | `src/ui/ApprovalPanel.tsx` | Hiển thị hộp duyệt tool | 25 |
-| `src/ui/approval.ts` | Dựng nội dung duyệt: lệnh, diff, cảnh báo, chính sách tự duyệt bash | 233 |
+| `src/ui/approval.ts` | Dựng nội dung duyệt: lệnh, diff, cảnh báo, chính sách tự duyệt | 245 |
 | `src/ui/diff.ts` | Diff dòng LCS, giới hạn số dòng | 77 |
 | `src/ui/format.ts` | Định dạng token, thời gian, đường dẫn, độ rộng ANSI | 56 |
-| `src/ui/theme.ts` | Palette, glyph, icon tool và ký tự viền dùng chung | 56 |
+| `src/ui/theme.ts` | Palette, glyph, icon tool, badge chế độ và ký tự viền dùng chung | 64 |
 | `src/ui/git.ts` | Đọc nhánh git cho header | 16 |
 | `src/ui/hitTest.ts` | Đổi tọa độ chuột thành dòng/mục transcript | 25 |
 | `src/ui/useTranscriptLines.ts` | Cache dòng ANSI và bản đồ chủ sở hữu dòng | 76 |
@@ -129,6 +129,29 @@ this.messages[0] = { role: 'system', content: this.prompts[mode] };
 `plan` chỉ giữ `Read`, `grep`, `Glob`. `runToolCalls()` dùng đúng map tool đã gửi model; nếu model vẫn gọi `Write`/`Edit`/`bash`, agent ghi kết quả lỗi `Tool ... bị khoá ở chế độ plan.` vào hội thoại và **không chạy** tool. Nhờ vậy giới hạn được thực thi ở agent, không chỉ ẩn khỏi danh sách gửi API.
 
 App giữ `modeRef`/`mode` giống các cặp state khác. `Tab` đổi chế độ khi agent rảnh; `/plan` và `/build` đổi trực tiếp. Hội thoại và token giữ nguyên khi đổi; chế độ hiện tại được đưa vào header, footer và `StatusLineInput`, đồng thời lưu vào file phiên.
+
+## Chế độ tự duyệt
+
+Chế độ tự duyệt là một cờ độc lập với `build`/`plan`: bật bằng `Alt+M` thì mọi tool có `needsApproval` chạy thẳng, không mở hộp duyệt. Trạng thái giữ ở `autoTrusted`/`autoTrustRef` trong `App`, cùng kiểu cặp state/ref như các cờ khác, nên `Alt+M` đổi được **giữa lượt đang chạy** — tool kế tiếp đọc ref ngay, không phải đợi lượt sau.
+
+`canAutoApprove(call, auto)` trong `approval.ts` là chốt quyết định:
+
+```ts
+export function canAutoApprove(call: ToolCall, auto: boolean): boolean {
+  if (!auto) return false;
+  const command = bashCommand(call);
+  return command === undefined || !isDangerousCommand(command);
+}
+```
+
+Hai điểm đáng chú ý:
+
+- Tool không phải `bash` luôn qua — `Write`/`Edit` không có khái niệm "nguy hiểm" nên chỉ cần cờ bật.
+- `bash` vẫn đi qua `isDangerousCommand()`, nên `rm`, `sudo`, force push, `curl | sh` **luôn** mở hộp duyệt dù đã bật tự duyệt. Đây là lý do tách `canAutoApprove` khỏi `canAutoApproveBash` cũ (chỉ áp dụng cho bash): hàm mới mở rộng phạm vi nhưng giữ nguyên chốt an toàn.
+
+Hệ quả lên giao diện: `Header` nhận prop `auto`, đổi badge thành `BUILD AUTO` và tô màu vàng thay vì màu chế độ; `StatusBar` nhận `autoTrusted` và nối `tự duyệt mọi tool`; `buildApprovalLines()` chỉ thêm dòng gợi ý `Alt+M` khi `canAutoApprove(call, true)` — tức không mời bật tự duyệt cho đúng nhóm lệnh sẽ bị chặn.
+
+`Alt+M` đi qua nhánh Alt trong `parseInput()`: terminal gửi `ESC` + ký tự, parser bỏ qua `[` và `O` để không nhầm với đầu chuỗi CSI/SS3, phần còn lại phát thành `key` có `meta: true` kèm `char` viết thường.
 
 ## Quản lý state trong App
 

@@ -131,9 +131,10 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 | `/plan` | Chuyển sang chế độ plan (chỉ đọc) |
 | `/build` | Chuyển sang chế độ build (đầy đủ tool) |
 | `/mode` | Xem chế độ hiện tại |
-| `/clear` | Xoá hội thoại, nạp lại PILL.md và tắt tự duyệt bash |
-| `/trust` | Xem trạng thái tự duyệt bash |
-| `/trust on` / `/trust off` | Bật/tắt tự duyệt bash cho phần còn lại của phiên |
+| `/clear` | Xoá hội thoại, nạp lại PILL.md và tắt tự duyệt |
+| `/auto` | Xem trạng thái tự duyệt |
+| `/auto on` / `/auto off` | Bật/tắt tự duyệt mọi tool cho phần còn lại của phiên |
+| `/trust` | Bí danh cũ của `/auto` |
 | `/model` | Xem model hiện tại |
 | `/model <tên>` | Đổi model cho phiên này |
 | `/effort` | Xem mức suy luận hiện tại |
@@ -143,7 +144,7 @@ Contents of /du-an/PILL.md (hướng dẫn của dự án):
 
 Lệnh không nhận diện được sẽ báo `Lệnh không hỗ trợ: <tên>`.
 
-Khi hộp duyệt đang mở: `y` chạy một lần, `n`/`Esc` từ chối, `d` mở rộng nội dung. Với lệnh `bash` thường, `a` bật tự duyệt mọi lệnh bash còn lại trong phiên; lựa chọn này không áp dụng cho `Write`/`Edit` và không áp dụng cho lệnh nguy hiểm (`rm`, `sudo`, force push, `curl | sh`…). Footer hiện `bash tự duyệt` khi bật; `/trust off` hoặc `/clear` tắt ngay.
+Khi hộp duyệt đang mở: `y` chạy một lần, `n`/`Esc` từ chối, `d` mở rộng nội dung. `Alt+M` (hoặc `a` với lệnh bash thường) bật chế độ tự duyệt cho mọi tool. Chế độ này không áp dụng cho lệnh nguy hiểm (`rm`, `sudo`, force push, `curl | sh`…) — nhóm đó luôn hỏi thủ công. Khi bật, header hiện badge `AUTO` và footer hiện `tự duyệt mọi tool`; `/auto off` hoặc `/clear` tắt ngay.
 
 ## Chế độ plan và build
 
